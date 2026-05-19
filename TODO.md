@@ -40,6 +40,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Sync Optimization (Metadata vs Data)**: Optimize `rclone` sync by separating `meta` and `data` into different folders. Download `meta` first to evaluate if the full `data` folder needs to be downloaded.
 - **Encryption Caching**: Implement caching for the encryption process to only re-encrypt modified data, optimizing the sync upload (as older time entries rarely change).
 - **Remove Duplicated Code**: Many date manipulation logic is repeated across files.
+- **Refactor Endpoint and functions names**: Some endpoints like the `trigger_upload` are not really informative as this endpoint doesn't actually upload anything, it exports data to local dir.
 
 ## 🧪 Testing
 

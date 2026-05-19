@@ -161,8 +161,11 @@ describe('Vuex Store', () => {
       const expectedEnd = new Date(testDate);
       expectedEnd.setHours(23, 59, 59, 999);
 
+      const expectedApiEnd = new Date(expectedEnd.getTime() + 1);
+
       expect(range.startDate).toEqual(expectedStart);
       expect(range.endDate).toEqual(expectedEnd);
+      expect(range.apiEndDate).toEqual(expectedApiEnd);
     });
 
     it('getDateRange returns correct start/end for Week view (Sunday start)', () => {
@@ -179,8 +182,11 @@ describe('Vuex Store', () => {
       const expectedEnd = new Date('2025-09-20T12:00:00'); // Saturday
       expectedEnd.setHours(23, 59, 59, 999);
 
+      const expectedApiEnd = new Date(expectedEnd.getTime() + 1);
+
       expect(range.startDate.toDateString()).toBe(expectedStart.toDateString());
       expect(range.endDate.toDateString()).toBe(expectedEnd.toDateString());
+      expect(range.apiEndDate.toDateString()).toBe(expectedApiEnd.toDateString());
     });
 
     it('getWeek returns 7 days starting from Sunday', () => {

@@ -96,16 +96,18 @@ const fetchTracks = async () => {
   if (!isAuthenticated.value) return;
   try {
     // always fetch the full week to support the persistent week timer
+    // TODO: use the uiStore getter for dateRange
     const week = store.getters['ui/getWeek'];
     const startDate = new Date(week[0]);
     startDate.setHours(0, 0, 0, 0);
 
-    const endDate = new Date(week[6]);
-    endDate.setHours(23, 59, 59, 999);
+    const apiEndDate = new Date(week[6]);
+    apiEndDate.setDate(apiEndDate.getDate() + 1);
+    apiEndDate.setHours(0, 0, 0, 0);
 
     await store.dispatch('time/fetchRangeData', {
       startDate: startDate.toISOString(),
-      endDate: endDate.toISOString()
+      endDate: apiEndDate.toISOString()
     });
   } catch (error) {
     handleError(error, 'Failed to fetch time data');

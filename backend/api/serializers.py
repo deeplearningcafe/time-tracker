@@ -42,13 +42,23 @@ class ProjectSerializer(serializers.ModelSerializer):
         model = Project
         fields = ("id", "user", "title", "created_at", "color")
         read_only_fields = ("created_at",)
-        validators = [
-            serializers.UniqueTogetherValidator(
-                queryset=Project.objects.all(),
-                fields=("user", "title"),
-                message="You already have a project with this title.",
+
+    # use custom validate over UniqueTogetherValidator to have more freedom
+    def validate(self, data):
+        request = self.context.get("request")
+        title = data.get("title")
+        if title:
+            qs = Project.objects.filter(
+                user=request.user, title=title, deleted_at__isnull=True
             )
-        ]
+            # if create is none else remove it for checking title
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError(
+                    {"title": "You already have a project with this title."}
+                )
+        return data
 
     def validate_title(self, value):
         """
@@ -96,7 +106,9 @@ class TimeEntrySerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get("request", None)
         if request and hasattr(request, "user"):
-            self.fields["project"].queryset = Project.objects.filter(user=request.user)
+            self.fields["project"].queryset = Project.objects.filter(
+                user=request.user, deleted_at__isnull=True
+            )
 
     def validate_name(self, value):
         """
@@ -128,7 +140,7 @@ class TimeTrackSerializer(serializers.ModelSerializer):
         request = self.context.get("request", None)
         if request and hasattr(request, "user"):
             self.fields["time_entry"].queryset = TimeEntry.objects.filter(
-                project__user=request.user
+                project__user=request.user, deleted_at__isnull=True
             )
 
     def validate(self, data):
@@ -159,7 +171,9 @@ class TimeTrackSerializer(serializers.ModelSerializer):
         is_creating = self.instance is None
         is_running = end_time is None
         if is_creating and is_running:
-            if TimeTrack.objects.filter(user=user, end_time__isnull=True).exists():
+            if TimeTrack.objects.filter(
+                user=user, end_time__isnull=True, deleted_at__isnull=True
+            ).exists():
                 raise serializers.ValidationError(
                     "You already have a running time track."
                 )
@@ -211,26 +225,37 @@ class DateRangeSerializer(serializers.Serializer):
 class ProjectImportSerializer(serializers.Serializer):
     """Serializer for validating a project object during import."""
 
+    id = serializers.UUIDField(required=False)
     title = serializers.CharField(max_length=200)
     color = serializers.CharField(max_length=6)
     created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField(required=False)
+    deleted_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class TimeEntryImportSerializer(serializers.Serializer):
     """Serializer for validating a time entry object during import."""
 
+    id = serializers.UUIDField(required=False)
+    project_id = serializers.UUIDField(required=False)
     project_title = serializers.CharField(max_length=200)
     name = serializers.CharField(max_length=255)
     created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField(required=False)
+    deleted_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class TimeTrackImportSerializer(serializers.Serializer):
     """Serializer for validating a time track object during import."""
 
+    id = serializers.UUIDField(required=False)
+    time_entry_id = serializers.UUIDField(required=False)
     entry_project_title = serializers.CharField(max_length=200)
     entry_name = serializers.CharField(max_length=255)
     start_time = serializers.DateTimeField()
     end_time = serializers.DateTimeField(required=False, allow_null=True)
+    updated_at = serializers.DateTimeField(required=False)
+    deleted_at = serializers.DateTimeField(required=False, allow_null=True)
 
 
 class DataImportSerializer(serializers.Serializer):

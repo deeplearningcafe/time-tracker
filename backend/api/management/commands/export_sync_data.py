@@ -34,7 +34,8 @@ class Command(BaseCommand):
 
         try:
             manager = SyncManager(user)
-            manager.export_to_drive()
+            files_to_upload = manager.export_to_drive()
+            manager.push_to_cloud(files_to_upload)
             self.stdout.write(
                 self.style.SUCCESS(
                     f"Successfully exported data for {user.username} to {manager.drive_path}"

@@ -147,9 +147,9 @@ describe('TimerView.vue', () => {
       const expectedStart = new Date(mockDate.setDate(diff));
       expectedStart.setHours(0, 0, 0, 0);
       const expectedEnd = new Date(expectedStart);
-      expectedEnd.setDate(expectedStart.getDate() + 6);
 
-      expectedEnd.setHours(23, 59, 59, 999);
+      expectedEnd.setDate(expectedStart.getDate() + 7); // Exactly 7 days later (next Sunday 00:00:00)
+      expectedEnd.setHours(0, 0, 0, 0);
 
       expect(actions.fetchRangeData).toHaveBeenCalledWith(
         expect.anything(), // context
@@ -183,9 +183,8 @@ describe('TimerView.vue', () => {
       const expectedStart = new Date(newDate.setDate(diff));
       expectedStart.setHours(0, 0, 0, 0);
       const expectedEnd = new Date(expectedStart);
-      expectedEnd.setDate(expectedStart.getDate() + 6);
-
-      expectedEnd.setHours(23, 59, 59, 999);
+      expectedEnd.setDate(expectedStart.getDate() + 7); // Exactly 7 days later (next Sunday 00:00:00)
+      expectedEnd.setHours(0, 0, 0, 0);
 
       expect(actions.fetchRangeData).toHaveBeenCalledWith(
         expect.anything(),

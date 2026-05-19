@@ -166,9 +166,9 @@ class TestSummaryAPI(APITestCase):
         self.client.force_authenticate(user=self.user)
 
         # Create a track starting at 23:00 on Day 3 and ending at 01:00 on Day 4
-        day_3 = self.ref_date + timedelta(days=2)  # 2025-09-17
+        day_3 = self.ref_date + timedelta(days=2)
         start_time = day_3.replace(hour=23, minute=0, second=0)
-        end_time = start_time + timedelta(hours=2)  # Ends 01:00 next day
+        end_time = start_time + timedelta(hours=2)
 
         TimeTrack.objects.create(
             user=self.user,
@@ -180,7 +180,6 @@ class TestSummaryAPI(APITestCase):
         start = "2025-09-17T00:00:00Z"
         end = "2025-09-19T00:00:00Z"
 
-        # Query range covering both days
         response = self.client.get(self.url, {"start_date": start, "end_date": end})
 
         # Expect the 2 hours to be split across the 2 days
@@ -202,8 +201,6 @@ class TestSummaryAPI(APITestCase):
 
         start_time = day_3.replace(hour=20, minute=0, second=0)
 
-        # To get 2025-09-19 02:00:00 from 2025-09-17 20:00:00,
-        # we need to add 1 day and 6 hours, not 2 days and 6 hours.
         end_time = start_time + timedelta(days=1, hours=6)
 
         TimeTrack.objects.create(
@@ -257,6 +254,128 @@ class TestSummaryAPI(APITestCase):
         self.assertEqual(day2_summary["date"], "2025-09-18")
         self.assertEqual(day2_summary["duration_seconds"], 2 * 3600.0)
 
+    def test_summary_week_boundaries(self):
+        """
+        Verify that the endpoint correctly handles the start and end of a week,
+        ensuring no boundary bugs exist.
+        """
+        self.client.force_authenticate(user=self.user)
+
+        # Sunday 2025-10-12 to Saturday 2025-10-18
+        start = "2025-10-12T00:00:00Z"
+        end = "2025-10-19T00:00:00Z"
+
+        # start boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_a1,
+            start_time=timezone.datetime(2025, 10, 12, 0, 0, 0, tzinfo=dt_timezone.utc),
+            end_time=timezone.datetime(2025, 10, 12, 1, 0, 0, tzinfo=dt_timezone.utc),
+        )
+
+        # end boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_a1,
+            start_time=timezone.datetime(
+                2025, 10, 18, 23, 0, 0, tzinfo=dt_timezone.utc
+            ),
+            end_time=timezone.datetime(2025, 10, 19, 0, 0, 0, tzinfo=dt_timezone.utc),
+        )
+
+        # before the start boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_a1,
+            start_time=timezone.datetime(
+                2025, 10, 11, 23, 0, 0, tzinfo=dt_timezone.utc
+            ),
+            end_time=timezone.datetime(2025, 10, 12, 0, 0, 0, tzinfo=dt_timezone.utc),
+        )
+
+        # after the end boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_a1,
+            start_time=timezone.datetime(2025, 10, 19, 0, 0, 0, tzinfo=dt_timezone.utc),
+            end_time=timezone.datetime(2025, 10, 19, 1, 0, 0, tzinfo=dt_timezone.utc),
+        )
+
+        # overlapping the start boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_b1,
+            start_time=timezone.datetime(
+                2025, 10, 11, 23, 30, 0, tzinfo=dt_timezone.utc
+            ),
+            end_time=timezone.datetime(2025, 10, 12, 0, 30, 0, tzinfo=dt_timezone.utc),
+        )
+
+        # overlapping the end boundary
+        TimeTrack.objects.create(
+            user=self.user,
+            time_entry=self.entry_b1,
+            start_time=timezone.datetime(
+                2025, 10, 18, 23, 30, 0, tzinfo=dt_timezone.utc
+            ),
+            end_time=timezone.datetime(2025, 10, 19, 0, 30, 0, tzinfo=dt_timezone.utc),
+        )
+
+        response = self.client.get(
+            self.url, {"start_date": start, "end_date": end, "timezone": "UTC"}
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        day_start_a = next(
+            (
+                d
+                for d in response.data
+                if d["date"] == "2025-10-12" and d["project"] == "Project A"
+            ),
+            None,
+        )
+        day_start_b = next(
+            (
+                d
+                for d in response.data
+                if d["date"] == "2025-10-12" and d["project"] == "Project B"
+            ),
+            None,
+        )
+        day_end_a = next(
+            (
+                d
+                for d in response.data
+                if d["date"] == "2025-10-18" and d["project"] == "Project A"
+            ),
+            None,
+        )
+        day_end_b = next(
+            (
+                d
+                for d in response.data
+                if d["date"] == "2025-10-18" and d["project"] == "Project B"
+            ),
+            None,
+        )
+
+        self.assertIsNotNone(day_start_a)
+        self.assertEqual(day_start_a["duration_seconds"], 3600.0)
+
+        self.assertIsNotNone(day_start_b)
+        self.assertEqual(day_start_b["duration_seconds"], 1800.0)
+
+        self.assertIsNotNone(day_end_a)
+        self.assertEqual(day_end_a["duration_seconds"], 3600.0)
+
+        self.assertIsNotNone(day_end_b)
+        self.assertEqual(day_end_b["duration_seconds"], 1800.0)
+
+        # Ensure no other days are included
+        dates = {d["date"] for d in response.data}
+        self.assertEqual(dates, {"2025-10-12", "2025-10-18"})
+
     def test_summary_validation_errors(self):
         """
         Verify 400 Bad Request for invalid inputs.
@@ -273,7 +392,6 @@ class TestSummaryAPI(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        # Case 3: Invalid format
         response = self.client.get(
             self.url, {"start_date": "not-a-date", "end_date": "2025-09-10"}
         )

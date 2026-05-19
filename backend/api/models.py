@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -8,14 +10,21 @@ from django.utils import timezone
 User = get_user_model()
 
 
+def default_sync_time():
+    return timezone.make_aware(datetime(1970, 1, 1))
+
+
 class Project(models.Model):
     """
     Represents a user-defined project to categorize time entries.
     """
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="projects")
     title = models.CharField(max_length=200)
     created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     color = models.CharField(max_length=6, default="000000")
 
     class Meta:
@@ -23,7 +32,9 @@ class Project(models.Model):
         constraints = [
             # A user cannot have two projects with the same title.
             models.UniqueConstraint(
-                fields=["user", "title"], name="unique_project_title_per_user"
+                fields=["user", "title"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_project_title_per_user",
             )
         ]
 
@@ -36,18 +47,23 @@ class TimeEntry(models.Model):
     Represents a specific task or activity within a project.
     """
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(
         Project, on_delete=models.CASCADE, related_name="time_entries"
     )
     name = models.CharField(max_length=255)
     created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["name"]
         constraints = [
             # A project cannot have two time entries with the same name.
             models.UniqueConstraint(
-                fields=["project", "name"], name="unique_time_entry_name_per_project"
+                fields=["project", "name"],
+                condition=Q(deleted_at__isnull=True),
+                name="unique_time_entry_name_per_project",
             )
         ]
 
@@ -61,12 +77,15 @@ class TimeTrack(models.Model):
     If 'end_time' is NULL, the track is considered to be running.
     """
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     time_entry = models.ForeignKey(
         TimeEntry, on_delete=models.CASCADE, related_name="time_tracks"
     )
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="time_tracks")
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
 
     def clean(self):
         """
@@ -88,7 +107,7 @@ class TimeTrack(models.Model):
             # This constraint is applied only to rows where end_time is NULL.
             models.UniqueConstraint(
                 fields=["user"],
-                condition=Q(end_time__isnull=True),
+                condition=Q(end_time__isnull=True) & Q(deleted_at__isnull=True),
                 name="unique_running_timer_per_user",
             ),
             # Ensures that if an end_time is set, it must be after the
@@ -101,3 +120,12 @@ class TimeTrack(models.Model):
 
     def __str__(self):
         return f"Track for {self.time_entry.name} by {self.user.username}"
+
+
+class SyncState(models.Model):
+    """Tracks the last time this local database was synchronized with the drive."""
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="sync_state"
+    )
+    last_sync_at = models.DateTimeField(default=default_sync_time)

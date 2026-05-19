@@ -11,16 +11,6 @@ fi
 
 echo "Checking if the drive directory ${LOCAL_MOUNT} exists"
 mkdir -p "$LOCAL_MOUNT"
-
-# 1. DOWNLOAD (Sync Down)
-echo "Checking for updates from cloud..."
-if command -v rclone &>/dev/null; then
-  rclone copy "$REMOTE_NAME:$REMOTE_PATH" "$LOCAL_MOUNT"
-  echo "Skip"
-else
-  echo "Warning: rclone not found. Skipping cloud download."
-fi
-
 export SYNC_DRIVE_PATH=$(realpath "$LOCAL_MOUNT")
 
 source ~/miniforge3/bin/activate track
@@ -53,14 +43,7 @@ fi
 echo ""
 echo "--- App Stopped. Synchronizing Data... ---"
 
-# Trigger Django to export the latest DB state to the encrypted file
+# Trigger Django to export the latest DB state and push targeted files to the cloud
 python backend/manage.py export_sync_data
-
-if command -v rclone &>/dev/null; then
-  rclone sync "$LOCAL_MOUNT" "$REMOTE_NAME:$REMOTE_PATH"
-  echo "Sync complete."
-else
-  echo "Warning: rclone not found. Changes saved locally but not uploaded."
-fi
 
 echo "--- Goodbye! ---"

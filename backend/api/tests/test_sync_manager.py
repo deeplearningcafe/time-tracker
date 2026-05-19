@@ -2,10 +2,14 @@ import os
 import json
 import shutil
 import tempfile
+import datetime
+import uuid
 from unittest import mock
 from cryptography.fernet import Fernet
 from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from api.models import SyncState
 from api.sync_manager import SyncManager
 from api.models import Project
 
@@ -51,21 +55,20 @@ class SyncManagerLogicTest(TestCase):
         manager = SyncManager(self.user)
         manager.export_to_drive()
 
-        data_path = os.path.join(self.test_dir, "data.enc")
+        common_path = os.path.join(self.test_dir, "current", "common.enc")
         meta_path = os.path.join(self.test_dir, "meta.json")
 
-        self.assertTrue(os.path.exists(data_path))
+        self.assertTrue(os.path.exists(common_path))
         self.assertTrue(os.path.exists(meta_path))
 
         with open(meta_path, "r") as f:
             meta = json.load(f)
-        self.assertEqual(meta["machine_id"], self.machine_id)
-        self.assertIn("timestamp", meta)
+        self.assertEqual(meta["common"]["machine_id"], self.machine_id)
+        self.assertIn("timestamp", meta["common"])
 
-        with open(data_path, "rb") as f:
+        with open(common_path, "rb") as f:
             content = f.read()
 
-        # Attempting to parse as JSON should fail (it's encrypted bytes)
         with self.assertRaises(Exception):
             json.loads(content)
 
@@ -83,17 +86,33 @@ class SyncManagerLogicTest(TestCase):
         manager = SyncManager(self.user)
         meta_path = os.path.join(self.test_dir, "meta.json")
 
-        # Case 1: No meta file -> Should not download
+        # Set the local sync state
+        sync_state, _ = SyncState.objects.get_or_create(user=self.user)
+        sync_state.last_sync_at = timezone.datetime.fromtimestamp(
+            10000, tz=datetime.timezone.utc
+        )
+        sync_state.save()
+
+        # No meta file -> no download
         self.assertFalse(manager.should_download())
 
-        # Case 2: Meta file with SAME machine ID -> Should not download
+        # SAME machine ID -> no download
         with open(meta_path, "w") as f:
-            json.dump({"machine_id": self.machine_id, "timestamp": 12345}, f)
+            json.dump(
+                {"common": {"machine_id": self.machine_id, "timestamp": 20000}}, f
+            )
         self.assertFalse(manager.should_download())
 
-        # Case 3: Meta file with DIFFERENT machine ID -> Should download
+        # DIFFERENT machine ID but OLDER/EQUAL timestamp -> no download
         with open(meta_path, "w") as f:
-            json.dump({"machine_id": "other_machine", "timestamp": 12345}, f)
+            json.dump({"common": {"machine_id": "other_machine", "timestamp": 5000}}, f)
+        self.assertFalse(manager.should_download())
+
+        # DIFFERENT machine ID and NEWER timestamp -> download
+        with open(meta_path, "w") as f:
+            json.dump(
+                {"common": {"machine_id": "other_machine", "timestamp": 20000}}, f
+            )
         self.assertTrue(manager.should_download())
 
     def test_import_from_drive_updates_db(self):
@@ -101,12 +120,15 @@ class SyncManagerLogicTest(TestCase):
         Ensure importing from drive decrypts data and replaces local DB state.
         """
         # 1. Prepare "remote" data (simulating another machine)
+        # with the id it uses the lww format
         import_data = {
             "projects": [
                 {
+                    "id": str(uuid.uuid4()),
                     "title": "Remote Project",
                     "color": "000000",
                     "created_at": "2023-01-01T00:00:00Z",
+                    "updated_at": "2023-01-01T00:00:00Z",
                 }
             ],
             "time_entries": [],
@@ -116,20 +138,28 @@ class SyncManagerLogicTest(TestCase):
         f = Fernet(self.key)
         encrypted = f.encrypt(json_str.encode())
 
-        with open(os.path.join(self.test_dir, "data.enc"), "wb") as file:
+        os.makedirs(os.path.join(self.test_dir, "current"), exist_ok=True)
+        with open(os.path.join(self.test_dir, "current", "common.enc"), "wb") as file:
             file.write(encrypted)
+
+        sync_state, _ = SyncState.objects.get_or_create(user=self.user)
+        sync_state.last_sync_at = timezone.datetime.fromtimestamp(
+            10000, tz=datetime.timezone.utc
+        )
+        sync_state.save()
+
+        with open(os.path.join(self.test_dir, "meta.json"), "w") as file:
+            json.dump(
+                {"common": {"machine_id": "other_machine", "timestamp": 12345}}, file
+            )
 
         manager = SyncManager(self.user)
         manager.import_from_drive()
 
-        # 3. Verify DB state
-        # Old project should be gone
-        self.assertFalse(Project.objects.filter(title="Local Project").exists())
-        # New project should exist
+        # LWW Merge does not delete the old project, it just adds the new one
+        self.assertTrue(Project.objects.filter(title="Local Project").exists())
         self.assertTrue(Project.objects.filter(title="Remote Project").exists())
 
-        # 4. Verify meta.json is updated to current machine ID
-        # This prevents re-downloading on next restart
         with open(os.path.join(self.test_dir, "meta.json"), "r") as file:
             meta = json.load(file)
-        self.assertEqual(meta["machine_id"], self.machine_id)
+        self.assertEqual(meta["common"]["machine_id"], self.machine_id)

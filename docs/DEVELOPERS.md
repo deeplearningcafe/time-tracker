@@ -19,11 +19,13 @@ To ensure data integrity and a consistent user experience, the application enfor
 - **Duration Calculation**: The duration of a time entry is calculated dynamically. For completed tracks, it is `end_time - start_time`. For live tracks, it is `current_time - start_time`.
 - **Unique Entities**: `Project` titles must be unique per user. `TimeEntry` names are unique per project. If a user tracks a new entry using an existing name/project combination, the system reuses the existing database object instead of creating a duplicate.
 - **Week Starts at Sunday**: The weekly calendar and all week-based aggregations must start on Sunday, ignoring the user's local locale settings.
-- **Automatic Data Synchronization**: The app syncs encrypted data to a local folder (designed to be mapped to a cloud drive via Rclone) using Fernet encryption. To optimize read/write operations, it first reads a `meta.json` file containing the `machine_id` and timestamp. It skips downloading and replacing local data if the last update was made by the exact same machine.
+- **Automatic Data Synchronization**: The app syncs encrypted data to a local folder (designed to be mapped to a cloud drive via Rclone) using Fernet encryption. To optimize read/write operations, it first reads a `meta.json` file containing the `machine_id` and timestamp. It skips downloading and merging local data if the last update was made by the exact same machine.
 - **Timezone and Date Handling**: All timestamps are stored in **UTC** in the backend. API communication uses **ISO 8601** strings. Aggregation endpoints (like `/api/summary/`) require the user's **IANA timezone string** to correctly truncate UTC timestamps to local day boundaries. The frontend is responsible for converting UTC to local time for display and generating local date keys (e.g., `YYYY-MM-DD`).
 - **Multi-day Tracks**: Time tracks that span across midnight (e.g., 22:00 to 06:00) are stored as a single continuous record in the backend. When filtering by date, the backend includes any overlapping entries. The frontend dynamically splits these tracks into daily segments for accurate rendering on the calendar and statistical reporting.
 - **Live Time Tracks Editability**: Live tracks can be edited by the user without stopping the timer. Because the `end_time` is null, any duration or date changes applied to a live track (via the modal, calendar, or live timer input) modify its `start_time` to reflect the new duration relative to the current time.
 - **Updating Time Entry**: If a time entry is updated by using the `EditEntryModal` clicking on a time track, only time track is updated, not the time entry. That is if the project is changed then the time track uses the newly generated time entry, while all the previous time tracks of the old time entry are kept without changes.
+- **Synchronization Logic**: Instead of the naive delete-then-insert original logic the app uses the Last-Write-Wins such that it handles several machines used at the same time. The cloud storage always uploads the projects and time entries, and only the time tracks of the modified year. Local records are only updated if they exist in the remote with newer `updated_at`, otherwise the remote data is merged into the local database.
+- **Soft Deleting**: To avoid conflicts with several machines, records are not removed from the database instead the `deleted_at` timestamp is updated to a non null value.
 
 ## 3. Backend Subsystem
 
@@ -31,10 +33,13 @@ The backend is a monolithic Django app (`api`) exposing RESTful endpoints.
 
 ### Data Model
 
+All dataset entities expect users have an `UUIDField`, `updated_at` and `deleted_at` fields.
+
 - **`User`**: Standard Django auth user.
 - **`Project`**: Categorizes time entries (includes `title`, `color`). The `color` is the hexadecimal representation without the `#` symbol which must be included in the frontend.
 - **`TimeEntry`**: A specific task/description within a project.
 - **`TimeTrack`**: A specific time block (`start_time`, `end_time`) linked to a `TimeEntry` and `User`.
+- **`SyncState`**: Tracks when the database was synchronized with the cloud storage. It stores only the user and the synchronization time.
 
 ### API Endpoints
 

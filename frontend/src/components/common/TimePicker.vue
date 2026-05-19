@@ -87,7 +87,11 @@ const onDateSelected = (date) => {
 };
 
 const onRangeSelected = ({ start, end }) => {
-  emit('set-range', { startDate: start, endDate: end, type: 'custom' });
+  emit('set-range', {
+    startDate: start, endDate: end,
+    apiEndDate: new Date(end.getTime() + 1),
+    type: 'custom'
+  });
   emit('close');
 };
 

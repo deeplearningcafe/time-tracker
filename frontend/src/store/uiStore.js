@@ -28,16 +28,25 @@ export const uiStore = {
       if (state.viewType === 'day') {
         const end = new Date(start);
         end.setHours(23, 59, 59, 999);
-        return { startDate: start, endDate: end };
+        return {
+          startDate: start,
+          endDate: end,
+          apiEndDate: new Date(end.getTime() + 1)
+        };
       } else {
-        // Week View: Default Start on Sunday
-        const dayOfWeek = start.getDay(); // 0=Sunday, 6=Saturday
+        // Week View: Start on Sunday
+        const dayOfWeek = start.getDay();
         start.setDate(start.getDate() - dayOfWeek);
 
         const end = new Date(start);
         end.setDate(start.getDate() + 6);
         end.setHours(23, 59, 59, 999);
-        return { startDate: start, endDate: end };
+        return {
+          startDate: start,
+          endDate: end,
+          // to use half open intervals in API
+          apiEndDate: new Date(end.getTime() + 1)
+        };
       }
     },
 
@@ -118,7 +127,12 @@ export const uiStore = {
           break;
       }
       console.log("inside getShortcutRange", shortcut, start, end, type);
-      return { startDate: start, endDate: end, type: type };
+      return {
+        startDate: start,
+        endDate: end,
+        apiEndDate: new Date(end.getTime() + 1),
+        type: type
+      };
     },
 
     getAdjacentRange: () => (currentRange, direction) => {
@@ -152,7 +166,12 @@ export const uiStore = {
 
       start.setHours(0, 0, 0, 0);
       end.setHours(23, 59, 59, 999);
-      return { startDate: start, endDate: end, type };
+      return {
+        startDate: start,
+        endDate: end,
+        apiEndDate: new Date(end.getTime() + 1),
+        type
+      };
     }
   },
   mutations: {

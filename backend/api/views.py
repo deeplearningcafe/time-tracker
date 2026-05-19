@@ -80,7 +80,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
         This view returns a list of all projects owned by the currently
         authenticated user.
         """
-        return Project.objects.filter(user=self.request.user)
+        return Project.objects.filter(user=self.request.user, deleted_at__isnull=True)
+
+    def perform_destroy(self, instance):
+        """
+        Implements cascade on delete for soft deletes
+        """
+        now = timezone.now()
+        instance.deleted_at = now
+        instance.save()
+        TimeEntry.objects.filter(project=instance, deleted_at__isnull=True).update(
+            deleted_at=now
+        )
+        TimeTrack.objects.filter(
+            time_entry__project=instance, deleted_at__isnull=True
+        ).update(deleted_at=now)
 
     @action(detail=False, methods=["get"])
     def durations(self, request):
@@ -93,6 +107,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 user=request.user,
                 end_time__isnull=False,
                 time_entry__project__isnull=False,
+                deleted_at__isnull=True,
+                time_entry__deleted_at__isnull=True,
+                time_entry__project__deleted_at__isnull=True,
             )
             .values("time_entry__project")
             .annotate(
@@ -108,7 +125,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         for t in tracks:
             project_id = t["time_entry__project"]
             duration = t["total_duration"]
-            durations_map[project_id] = duration.total_seconds() if duration else 0
+            durations_map[str(project_id)] = duration.total_seconds() if duration else 0
 
         return Response(durations_map)
 
@@ -128,7 +145,20 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         This view returns time entries belonging to projects of the
         currently authenticated user.
         """
-        return TimeEntry.objects.filter(project__user=self.request.user)
+        return TimeEntry.objects.filter(
+            project__user=self.request.user, deleted_at__isnull=True
+        )
+
+    def perform_destroy(self, instance):
+        """
+        Implements cascade on delete for soft deletes
+        """
+        now = timezone.now()
+        instance.deleted_at = now
+        instance.save()
+        TimeTrack.objects.filter(time_entry=instance, deleted_at__isnull=True).update(
+            deleted_at=now
+        )
 
     def create(self, request, *args, **kwargs):
         """
@@ -144,7 +174,9 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         project_id = serializer.validated_data.get("project").id
         print(f"project_id {project_id}")
         try:
-            project = Project.objects.get(pk=project_id, user=request.user)
+            project = Project.objects.get(
+                pk=project_id, user=request.user, deleted_at__isnull=True
+            )
         except Project.DoesNotExist:
             return Response(
                 {"project": "Invalid project ID."}, status=status.HTTP_400_BAD_REQUEST
@@ -153,6 +185,7 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
         time_entry, created = TimeEntry.objects.get_or_create(
             name=serializer.validated_data.get("name"),
             project=project,
+            deleted_at__isnull=True,
         )
 
         status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -177,7 +210,9 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
 
         if new_project_id:
             try:
-                new_project = Project.objects.get(pk=new_project_id, user=request.user)
+                new_project = Project.objects.get(
+                    pk=new_project_id, user=request.user, deleted_at__isnull=True
+                )
             except Project.DoesNotExist:
                 return Response(
                     {"project": "Invalid project ID."},
@@ -186,7 +221,9 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
 
             # Check if a DIFFERENT entry already exists with this target configuration
             existing_target = (
-                TimeEntry.objects.filter(project=new_project, name=new_name)
+                TimeEntry.objects.filter(
+                    project=new_project, name=new_name, deleted_at__isnull=True
+                )
                 .exclude(pk=instance.pk)
                 .first()
             )
@@ -198,8 +235,8 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
                     TimeTrack.objects.filter(time_entry=instance).update(
                         time_entry=existing_target
                     )
-                    # 2. Delete the old instance
-                    instance.delete()
+                    instance.deleted_at = timezone.now()
+                    instance.save()
 
                 # 3. Return the existing_target data
                 serializer = self.get_serializer(existing_target)
@@ -246,14 +283,21 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
                     Q(time_tracks__end_time__gt=start_date)
                     | Q(time_tracks__end_time__isnull=True)
                 )
+                & Q(time_tracks__deleted_at__isnull=True)
             ).distinct()
         elif start_date:
             queryset = queryset.filter(
-                Q(time_tracks__end_time__gt=start_date)
-                | Q(time_tracks__end_time__isnull=True)
+                (
+                    Q(time_tracks__end_time__gt=start_date)
+                    | Q(time_tracks__end_time__isnull=True)
+                )
+                & Q(time_tracks__deleted_at__isnull=True)
             ).distinct()
         elif end_date:
-            queryset = queryset.filter(time_tracks__start_time__lt=end_date).distinct()
+            queryset = queryset.filter(
+                time_tracks__start_time__lt=end_date,
+                time_tracks__deleted_at__isnull=True,
+            ).distinct()
 
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
@@ -268,7 +312,10 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
 
         queryset = (
             self.get_queryset()
-            .filter(time_tracks__start_time__gte=thirty_days_ago)
+            .filter(
+                time_tracks__start_time__gte=thirty_days_ago,
+                time_tracks__deleted_at__isnull=True,
+            )
             .annotate(most_recent_track=Max("time_tracks__start_time"))
             .order_by("-most_recent_track")
         )
@@ -292,7 +339,11 @@ class TimeTrackViewSet(viewsets.ModelViewSet):
         This view returns a list of all time tracks for the currently
         authenticated user.
         """
-        return TimeTrack.objects.filter(user=self.request.user)
+        return TimeTrack.objects.filter(user=self.request.user, deleted_at__isnull=True)
+
+    def perform_destroy(self, instance):
+        instance.deleted_at = timezone.now()
+        instance.save()
 
     def list(self, request, *args, **kwargs):
         """
@@ -377,7 +428,13 @@ class SummaryViewSet(viewsets.ViewSet):
         # Group by Date, Project, and Time Entry.
         # We filter out running timers (end_time__isnull=False)
         summary_query = (
-            TimeTrack.objects.filter(user=request.user, end_time__isnull=False)
+            TimeTrack.objects.filter(
+                user=request.user,
+                end_time__isnull=False,
+                deleted_at__isnull=True,
+                time_entry__deleted_at__isnull=True,
+                time_entry__project__deleted_at__isnull=True,
+            )
             .filter(Q(start_time__lt=end_date) & Q(end_time__gt=start_date))
             .select_related("time_entry__project")
         )
@@ -456,14 +513,14 @@ class DataPortabilityViewSet(viewsets.ViewSet):
         """
         user = request.user
         track_years = (
-            TimeTrack.objects.filter(user=user)
+            TimeTrack.objects.filter(user=user, deleted_at__isnull=True)
             .annotate(year=ExtractYear("start_time"))
             .values_list("year", flat=True)
             .distinct()
         )
 
         project_years = (
-            Project.objects.filter(user=user)
+            Project.objects.filter(user=user, deleted_at__isnull=True)
             .annotate(year=ExtractYear("created_at"))
             .values_list("year", flat=True)
             .distinct()
@@ -575,7 +632,8 @@ class SyncViewSet(viewsets.ViewSet):
         """
         try:
             manager = SyncManager(request.user)
-            manager.export_to_drive()
+            files_to_upload = manager.export_to_drive()
+            manager.push_to_cloud(files_to_upload)
             return Response({"status": "synced"}, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response(
@@ -594,6 +652,8 @@ class SyncViewSet(viewsets.ViewSet):
         """
         try:
             manager = SyncManager(request.user)
+            manager.pull_from_cloud()
+
             if manager.should_download():
                 manager.import_from_drive()
                 return Response({"status": "downloaded"}, status=status.HTTP_200_OK)

@@ -75,11 +75,11 @@ class TestRecentTimeEntriesAPI(APITestCase):
 
         # Verify the order: most recent first
         response_ids = [entry["id"] for entry in response.data]
-        expected_ids = [self.entry2_most_recent.id, self.entry1_recent.id]
+        expected_ids = [str(self.entry2_most_recent.id), str(self.entry1_recent.id)]
         self.assertEqual(response_ids, expected_ids)
 
         # Verify that the old entry is not present
-        self.assertNotIn(self.entry3_old.id, response_ids)
+        self.assertNotIn(str(self.entry3_old.id), response_ids)
 
     def test_get_recent_entries_unauthenticated(self):
         """

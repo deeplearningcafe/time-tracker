@@ -74,10 +74,10 @@ class TestProjectAPI(APITestCase):
         response = self.client.post(self.list_create_url, payload)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("non_field_errors", response.data)
+        self.assertIn("title", response.data)
         self.assertIn(
             "You already have a project with this title.",
-            str(response.data["non_field_errors"][0]),
+            str(response.data["title"][0]),
         )
 
     def test_create_project_fails_blank_title(self):
@@ -100,7 +100,7 @@ class TestProjectAPI(APITestCase):
         response = self.client.get(self.detail_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["id"], self.project1.id)
+        self.assertEqual(response.data["id"], str(self.project1.id))
 
     def test_retrieve_other_users_project_fails(self):
         """
@@ -145,13 +145,14 @@ class TestProjectAPI(APITestCase):
 
     def test_delete_project_success(self):
         """
-        Ensure a user can delete their own project.
+        Ensure a user can delete their own project. Soft delete.
         """
         self.client.force_authenticate(user=self.user1)
         response = self.client.delete(self.detail_url)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Project.objects.filter(pk=self.project1.id).exists())
+        self.project1.refresh_from_db()
+        self.assertIsNotNone(self.project1.deleted_at)
 
     def test_delete_other_users_project_fails(self):
         """
@@ -184,9 +185,12 @@ class TestProjectAPI(APITestCase):
         response = self.client.delete(delete_url)
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Project.objects.filter(pk=project_to_delete.id).exists())
-        self.assertFalse(TimeEntry.objects.filter(pk=time_entry.id).exists())
-        self.assertFalse(TimeTrack.objects.filter(pk=time_track.id).exists())
+        project_to_delete.refresh_from_db()
+        time_entry.refresh_from_db()
+        time_track.refresh_from_db()
+        self.assertIsNotNone(project_to_delete.deleted_at)
+        self.assertIsNotNone(time_entry.deleted_at)
+        self.assertIsNotNone(time_track.deleted_at)
 
     def test_get_project_durations_success(self):
         """
@@ -230,7 +234,7 @@ class TestProjectAPI(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         # 1 hour + 30 minutes = 5400 seconds
-        self.assertIn(self.project1.id, response.data)
-        self.assertEqual(response.data[self.project1.id], 5400.0)
+        self.assertIn(str(self.project1.id), response.data)
+        self.assertEqual(response.data[str(self.project1.id)], 5400.0)
 
-        self.assertNotIn(self.project2.id, response.data)
+        self.assertNotIn(str(self.project2.id), response.data)

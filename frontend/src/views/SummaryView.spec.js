@@ -60,29 +60,38 @@ describe('SummaryView.vue', () => {
         ui: {
           namespaced: true,
           state: uiState,
+          actions: {
+            setDate: vi.fn(),
+            setViewType: vi.fn(),
+          },
           getters: {
             getCurrentDate: (state) => state.currentDate,
             getViewType: (state) => state.viewType,
             getShortcutRange: () => () => {
+              // sunday start
               const start = new Date(mockDate);
               start.setHours(0, 0, 0, 0);
-              const day = start.getDay(); // 0=Sun, 1=Mon...
-              // Test expects Monday start.
-              // If day is 0 (Sun), we want to go back to previous Monday (-6 days).
-              // If day is 1 (Mon), we stay (0 days).
-              const diff = day === 0 ? 6 : day - 1;
+              const day = start.getDay();
+              const diff = day;
               start.setDate(start.getDate() - diff);
 
               const end = new Date(start);
               end.setDate(start.getDate() + 6);
               end.setHours(23, 59, 59, 999);
 
-              return { startDate: start, endDate: end, type: 'week' };
+              return {
+                startDate: start,
+                endDate: end,
+                apiEndDate: new Date(end.getTime() + 1),
+                type: 'week'
+              };
             },
             getAdjacentRange: () => () => {
+              const end = new Date('2025-09-28T23:59:59.999Z');
               return {
                 startDate: new Date('2025-09-22T00:00:00.000Z'),
-                endDate: new Date('2025-09-28T23:59:59.999Z'),
+                endDate: end,
+                apiEndDate: new Date(end.getTime() + 1),
                 type: 'week'
               };
             }
@@ -124,10 +133,17 @@ describe('SummaryView.vue', () => {
       store = createVuexStore();
       mountComponent(store);
 
-      // Week Start (Sunday) = Sept 14.
-      // Week End (Sunday) = Sept 21.
-      const expectedStart = '2025-09-14T22:00:00.000Z';
-      const expectedEnd = '2025-09-21T21:59:59.999Z';
+
+      const start = new Date(mockDate);
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - start.getDay());
+
+      const end = new Date(start);
+      end.setDate(start.getDate() + 7);
+      end.setHours(0, 0, 0, 0);
+
+      const expectedStart = start.toISOString();
+      const expectedEnd = end.toISOString();
 
       expect(timeActions.fetchSummary).toHaveBeenCalledTimes(1);
       const payload = timeActions.fetchSummary.mock.calls[0][1];
@@ -146,8 +162,13 @@ describe('SummaryView.vue', () => {
 
       const newStart = new Date('2025-09-22T00:00:00.000Z');
       const newEnd = new Date('2025-09-28T23:59:59.999Z');
+      const newApiEnd = new Date(newEnd.getTime() + 1);
 
-      await navigator.vm.$emit('set-range', { startDate: newStart, endDate: newEnd, type: 'week' });
+      await navigator.vm.$emit('set-range', {
+        startDate: newStart, endDate: newEnd,
+        apiEndDate: newApiEnd,
+        type: 'week'
+      });
 
       await wrapper.vm.$nextTick();
       await flushPromises();
@@ -273,10 +294,10 @@ describe('SummaryView.vue', () => {
       // Total Seconds: 3600 + 1800 + 7200 = 12600
       expect(metrics.props('totalSeconds')).toBe(12600);
 
-      // Daily Average: 12600 / 7 days (standard week view) = 1800
+      // Daily Average: 12600 / 5 days (up to today, Thursday) = 2520
       const avg = metrics.props('dailyAverage');
       expect(avg).toBeGreaterThan(0);
-      expect(avg).toBe(1800);
+      expect(avg).toBe(2520);
     });
 
     it('computes and passes correct breakdown to ProjectBreakdownList', () => {

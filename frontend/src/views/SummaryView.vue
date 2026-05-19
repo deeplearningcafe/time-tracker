@@ -97,7 +97,7 @@ const processedData = computed(() => {
 
   let binSize = 'day';
   const diffTime = endDate.getTime() - startDate.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 3600 * 24)) + 1;
+  const diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
 
   if (type === 'year') {
     binSize = 'month';
@@ -229,7 +229,7 @@ const processedData = computed(() => {
   const diffTimeAvg = Math.max(0, effectiveEndDate - startDate);
   const msPerDay = 1000 * 60 * 60 * 24;
   const diffDaysAvg = Math.ceil(diffTimeAvg / msPerDay);
-  const dailyAverage = diffDays > 0 ? totalSeconds / diffDays : 0;
+  const dailyAverage = diffDaysAvg > 0 ? totalSeconds / diffDaysAvg : 0;
 
   return {
     barChart,
@@ -244,7 +244,7 @@ const fetchSummary = () => {
   console.log("inside fetchSummary", dateRange.value);
   store.dispatch('time/fetchSummary', {
     startDate: dateRange.value.startDate.toISOString(),
-    endDate: dateRange.value.endDate.toISOString()
+    endDate: dateRange.value.apiEndDate.toISOString()
   });
 };
 
@@ -254,6 +254,10 @@ const handleRangeChange = (direction) => {
 };
 
 const handleSetRange = (payload) => {
+  // Ensure apiEndDate exists even if the child component (TimePicker) doesn't provide it
+  if (!payload.apiEndDate && payload.endDate) {
+    payload.apiEndDate = new Date(payload.endDate.getTime() + 1);
+  }
   dateRange.value = payload;
   console.log("inside handleSetRange", dateRange.value);
   store.dispatch('ui/setDate', { newDate: payload.startDate });
