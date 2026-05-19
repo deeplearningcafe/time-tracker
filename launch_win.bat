@@ -33,19 +33,10 @@ if exist .env (
     )
 )
 
+:: Ensure local directory exists
 echo Checking if the drive directory "%LOCAL_MOUNT%" exists
 if not exist "%LOCAL_MOUNT%" mkdir "%LOCAL_MOUNT%"
-
-:: 1. DOWNLOAD (Sync Down)
-echo Checking for updates from cloud...
-:: quotes to handle spaces in the path
-if exist "%RCLONE_EXE_PATH%" (
-    "%RCLONE_EXE_PATH%" copy "%REMOTE_NAME%:%REMOTE_PATH%" "%LOCAL_MOUNT%"
-) else (
-    echo Warning: rclone not found at: "%RCLONE_EXE_PATH%"
-)
-
-:: 2. RUN APP
+:: Absolute Path
 for %%I in ("%LOCAL_MOUNT%") do set "SYNC_DRIVE_PATH=%%~fI"
 
 call conda activate track
@@ -84,13 +75,6 @@ echo.
 echo --- App Stopped. Synchronizing Data... ---
 
 python backend\manage.py export_sync_data
-
-if exist "%RCLONE_EXE_PATH%" (
-    "%RCLONE_EXE_PATH%" sync "%LOCAL_MOUNT%" "%REMOTE_NAME%:%REMOTE_PATH%"
-    echo Sync complete.
-) else (
-    echo Warning: rclone not found. Sync skipped.
-)
 
 echo --- Goodbye! ---
 endlocal
