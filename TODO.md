@@ -16,6 +16,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Date Picker selected range**: In the `SummaryView` the calendar doesn't show a the selected range in highlighted colors, it only plots the start and end dates.
 - **Suggestions Reactivity**: When creating a new time entry, the suggerstions dropdown does not include it until the whole page is refreshed.
 - **Avg Daily Hours do not include future dates**: In the `SummaryView` the avg daily hours should only compute current and past days not the future.
+- **Every time the frontend is refreshed it checks the cloud for data**: This is an expensive operation as downloading the `meta.json` takes some time.
 
 ## 🎨 UI/UX Improvements
 
@@ -30,6 +31,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Locale Update**: Change all hardcoded `en-US` locales to `ja-JP` across the application.
 - **Export Report**: Allow users to export the time range report (including graphs) to a PDF file.
 - **Archive/Delete projects**: In the `ProjectView` allow users to archive or delete projects.
+- **Deactivate cloud upload**: Add an option in the `SettingsView` such that the user can decide to not use the cloud data sharing.
 
 ## 🛠 Refactoring & Tech Debt
 

@@ -72,7 +72,9 @@ class SyncManager:
     def pull_from_cloud(self):
         """Downloads meta.json, determines what changed, and downloads ONLY those files."""
         # Always pull the latest meta
-        self.storage.download_file("meta.json")
+        success = self.storage.download_file("meta.json")
+        if not success:
+            return
 
         meta = self._read_meta()
         sync_state, _ = SyncState.objects.get_or_create(user=self.user)
@@ -157,7 +159,7 @@ class SyncManager:
                 common_data, os.path.join(self.current_dir, "common.enc")
             )
             meta["common"] = {"timestamp": time.time(), "machine_id": self.machine_id}
-            files_to_upload.append(f"{self.current_name}/common.enc")
+            files_to_upload.append(os.path.join(self.current_name, "common.enc"))
 
         modified_years = set(
             TimeTrack.objects.filter(
@@ -165,8 +167,8 @@ class SyncManager:
             ).values_list("start_time__year", flat=True)
         )
 
-        if str(current_year) not in meta["years"]:
-            modified_years.add(current_year)
+        # Always include the current year
+        modified_years.add(current_year)
 
         for year in modified_years:
             if not year:
@@ -178,7 +180,7 @@ class SyncManager:
             filename = f"tracks_{year}.enc"
 
             local_filepath = os.path.join(self.drive_path, folder_name, filename)
-            rel_filepath = f"{folder_name}/{filename}"
+            rel_filepath = os.path.join(folder_name, filename)
 
             self._encrypt_and_write(tracks_data, local_filepath)
             meta["years"][year_str] = {

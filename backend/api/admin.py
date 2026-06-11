@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Project, TimeEntry, TimeTrack
+from .models import Project, TimeEntry, TimeTrack, SyncState
 
 
 @admin.register(Project)
@@ -18,3 +18,9 @@ class TimeEntryAdmin(admin.ModelAdmin):
 class TimeTrackAdmin(admin.ModelAdmin):
     list_display = ("time_entry", "user", "start_time", "end_time")
     search_fields = ("time_entry", "user", "start_time")
+
+
+@admin.register(SyncState)
+class SyncStateAdmin(admin.ModelAdmin):
+    list_display = ("user", "last_sync_at")
+    search_fields = ("user", "last_sync_at")

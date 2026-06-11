@@ -4,13 +4,16 @@
     <!-- Sidebar Component -->
     <Sidebar v-if="showSidebar" :collapsed="isSidebarCollapsed" @toggle="isSidebarCollapsed = !isSidebarCollapsed" />
     <main class="flex-1 flex flex-col min-w-0 relative bg-black">
-      <RouterView />
+      <div v-if="isStartupSyncing" class="flex h-full items-center justify-center text-xl text-blue-500">
+        Synchronizing with cloud...
+      </div>
+      <RouterView v-else />
     </main>
   </div>
 </template>
 
 <script setup>
-import { watch, onMounted, ref } from 'vue';
+import { watch, onMounted, ref, computed } from 'vue';
 import { useStore } from 'vuex';
 import { RouterView, useRoute } from 'vue-router';
 import Sidebar from './components/layout/Sidebar.vue';
@@ -21,6 +24,8 @@ const route = useRoute();
 // State for sidebar toggle
 const isSidebarCollapsed = ref(false);
 const showSidebar = ref(false);
+
+const isStartupSyncing = computed(() => store.state.data.syncStatus === 'startup_syncing');
 
 onMounted(async () => {
   store.dispatch('auth/loadTokens');
@@ -34,6 +39,7 @@ onMounted(async () => {
       await store.dispatch('time/fetchProjects');
     } catch (error) {
       console.log("Initial session validation failed.");
+      console.error(error)
     }
   }
 });

@@ -126,7 +126,8 @@ export const dataStore = {
         commit('SET_SYNC_STATUS', 'error');
       }
     },
-    async checkStartupSync({ dispatch, rootGetters }) {
+    async checkStartupSync({ commit, dispatch, rootGetters }) {
+      commit('SET_SYNC_STATUS', 'startup_syncing');
       try {
         const response = await axiosInstance.post('/sync/startup_check/');
         if (response.data.status === 'downloaded') {
@@ -147,6 +148,8 @@ export const dataStore = {
           error.response?.data?.error ||
           'An unknown error occurred during import.';
         console.error("Manual sync failed:", message, " : ", error);
+      } finally {
+        commit('SET_SYNC_STATUS', 'idle');
       }
     },
   },

@@ -26,8 +26,11 @@ class Command(BaseCommand):
                 self.stderr.write(self.style.ERROR(f'User "{username}" not found'))
                 return
         else:
-            # Fallback for single-user local apps: pick the first user
-            user = User.objects.first()
+            user = (
+                User.objects.exclude(last_login__isnull=True)
+                .order_by("-last_login")
+                .first()
+            )
             if not user:
                 self.stderr.write(self.style.ERROR("No users found in database"))
                 return

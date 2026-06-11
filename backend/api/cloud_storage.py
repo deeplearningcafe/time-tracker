@@ -1,5 +1,6 @@
 import subprocess
 import os
+import shutil
 
 
 class RcloneAdapter:
@@ -15,23 +16,40 @@ class RcloneAdapter:
         self.local_base = local_mount
         self.is_configured = bool(self.remote_base)
 
+        # win
+        env_rclone = os.environ.get("RCLONE_EXE_PATH")
+        # linux
+        which_rclone = shutil.which("rclone")
+        if env_rclone and os.path.exists(env_rclone):
+            self.rclone_cmd = env_rclone
+        elif which_rclone:
+            self.rclone_cmd = which_rclone
+        else:
+            self.rclone_cmd = "rclone"
+
     def download_file(self, rel_path):
         """Downloads a specific file from the remote to the local mount."""
         if not self.is_configured:
             return False
 
-        remote = f"{self.remote_base}/{rel_path}"
-        local = os.path.join(self.local_base, rel_path)
-        os.makedirs(os.path.dirname(local), exist_ok=True)
+        local_rel = os.path.normpath(rel_path)
+        local = os.path.join(self.local_base, local_rel)
+
+        remote_rel = rel_path.replace(os.sep, "/")
+        remote = f"{self.remote_base}/{remote_rel}"
 
         try:
             subprocess.run(
-                ["rclone", "copyto", remote, local], check=True, capture_output=True
+                [self.rclone_cmd, "copyto", remote, local],
+                check=True,
+                capture_output=True,
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             # FileNotFoundError if rclone is not installed
             # CalledProcessError if the file doesn't exist
+            print(f"Rclone FileNotFoundError for {remote}")
             return False
 
     def upload_file(self, rel_path):
@@ -39,12 +57,18 @@ class RcloneAdapter:
         if not self.is_configured:
             return False
 
-        local = os.path.join(self.local_base, rel_path)
-        remote = f"{self.remote_base}/{rel_path}"
+        local_rel = os.path.normpath(rel_path)
+        local = os.path.join(self.local_base, local_rel)
+
+        remote_rel = rel_path.replace(os.sep, "/")
+        remote = f"{self.remote_base}/{remote_rel}"
 
         try:
             subprocess.run(
-                ["rclone", "copyto", local, remote], check=True, capture_output=True
+                [self.rclone_cmd, "copyto", local, remote],
+                check=True,
+                capture_output=True,
+                text=True,
             )
             return True
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
