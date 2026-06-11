@@ -250,8 +250,8 @@ class TimeTrackImportSerializer(serializers.Serializer):
 
     id = serializers.UUIDField(required=False)
     time_entry_id = serializers.UUIDField(required=False)
-    entry_project_title = serializers.CharField(max_length=200)
-    entry_name = serializers.CharField(max_length=255)
+    time_entry_project_title = serializers.CharField(max_length=200)
+    time_entry_name = serializers.CharField(max_length=255)
     start_time = serializers.DateTimeField()
     end_time = serializers.DateTimeField(required=False, allow_null=True)
     updated_at = serializers.DateTimeField(required=False)
