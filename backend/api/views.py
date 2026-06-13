@@ -1,17 +1,14 @@
 import json
 from collections import defaultdict
 from datetime import timedelta
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import F, Max, Sum, DurationField, Q, ExpressionWrapper
-from django.db.models.functions import TruncDate
 from django.db.models.functions import ExtractYear
 from django.http import JsonResponse
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -20,7 +17,6 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .models import Project, TimeEntry, TimeTrack
 from .serializers import (
-    DataImportSerializer,
     ProjectSerializer,
     DateRangeSerializer,
     TimeEntrySerializer,
@@ -582,7 +578,7 @@ class DataPortabilityViewSet(viewsets.ViewSet):
             for import_file in import_files:
                 if import_file.name.lower().endswith(".csv"):
                     parsed_data_list.append(
-                        UserDataService.parse_toggl_csv(import_file)
+                        UserDataService.parse_toggl_csv(import_file, user)
                     )
                 else:
                     parsed_data_list.append(
@@ -593,6 +589,12 @@ class DataPortabilityViewSet(viewsets.ViewSet):
 
             UserDataService.import_user_data(user, merged_data)
 
+        except IntegrityError:
+            # Catches foreign key violations (e.g., bad project_id)
+            return Response(
+                {"error": "Data integrity error: Invalid reference or constraint."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except KeyError as e:
             return Response(
                 {"error": f"Data integrity error: Missing reference {e}."},

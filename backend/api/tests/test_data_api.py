@@ -199,10 +199,10 @@ class TestDataAPI(APITestCase):
         response = self.client.get(self.export_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_import_data_success_replaces_old_data(self):
+    def test_import_data_success_merges_old_data(self):
         """
-        Ensure importing data successfully deletes all old data for the
-        user and creates the new data from the file.
+        Ensure importing data successfully merges the new data from the
+        file with the existing data using Last-Write-Wins logic.
         """
         self.client.force_authenticate(user=self.user1)
 
@@ -210,6 +210,7 @@ class TestDataAPI(APITestCase):
         import_data = {
             "projects": [
                 {
+                    "id": "11111111-1111-1111-1111-111111111111",
                     "title": "New Imported Project",
                     "color": "0000FF",
                     "created_at": "2025-09-10T09:00:00Z",
@@ -217,15 +218,16 @@ class TestDataAPI(APITestCase):
             ],
             "time_entries": [
                 {
-                    "project_title": "New Imported Project",
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "project_id": "11111111-1111-1111-1111-111111111111",
                     "name": "New Task",
                     "created_at": "2025-09-10T09:30:00Z",
                 }
             ],
             "time_tracks": [
                 {
-                    "entry_project_title": "New Imported Project",
-                    "entry_name": "New Task",
+                    "id": "33333333-3333-3333-3333-333333333333",
+                    "time_entry_id": "22222222-2222-2222-2222-222222222222",
                     "start_time": "2025-09-10T10:00:00Z",
                     "end_time": "2025-09-10T11:00:00Z",
                 }
@@ -240,8 +242,8 @@ class TestDataAPI(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
-        # Verify old data is gone and new data exists
-        self.assertEqual(Project.objects.filter(user=self.user1).count(), 1)
+        # Verify old data is kept and new data exists
+        self.assertEqual(Project.objects.filter(user=self.user1).count(), 3)
         self.assertTrue(
             Project.objects.filter(
                 user=self.user1, title="New Imported Project"
@@ -272,6 +274,7 @@ class TestDataAPI(APITestCase):
         invalid_data = {
             "projects": [
                 {
+                    "id": "11111111-1111-1111-1111-111111111111",
                     "title": "Valid Project",
                     "color": "00FF00",
                     "created_at": "2025-01-01T10:00:00Z",
@@ -279,7 +282,8 @@ class TestDataAPI(APITestCase):
             ],
             "time_entries": [
                 {
-                    "project_title": "Non-Existent Project",
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "project_id": "99999999-9999-9999-9999-999999999999",
                     "name": "Task",
                     "created_at": "2025-01-01T10:30:00Z",
                 }
@@ -295,7 +299,7 @@ class TestDataAPI(APITestCase):
 
         self.assertEqual(
             response.data["error"],
-            "Data integrity error: Missing reference 'Non-Existent Project'.",
+            "Data integrity error: Invalid reference or constraint.",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         # Verify data was not deleted due to the transaction rollback
@@ -325,3 +329,46 @@ class TestDataAPI(APITestCase):
             self.import_url, {"file": json_file}, format="multipart"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_import_toggl_csv_success(self):
+        """
+        Ensure importing a Toggl Track CSV file successfully parses and
+        merges the data.
+        """
+        self.client.force_authenticate(user=self.user1)
+
+        csv_content = (
+            "User,Email,Client,Project,Task,Description,Billable,"
+            "Start date,Start time,End date,End time,Duration\n"
+            "user1,user@mail,,Machine Learning,,論文実装,No,"
+            "2026-05-16,09:44:15,2026-05-16,11:39:21,01:55:06\n"
+            "user1,user@mail,,Japanese,,アニメ,No,"
+            "2026-05-16,08:45:07,2026-05-16,09:42:25,00:57:18\n"
+        )
+        csv_file = StringIO(csv_content)
+        csv_file.name = "export.csv"
+
+        initial_project_count = Project.objects.filter(user=self.user1).count()
+        initial_track_count = TimeTrack.objects.filter(user=self.user1).count()
+
+        response = self.client.post(
+            self.import_url, {"file": csv_file}, format="multipart"
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Verify new data is added
+        self.assertEqual(
+            Project.objects.filter(user=self.user1).count(),
+            initial_project_count + 2,
+        )
+        self.assertEqual(
+            TimeTrack.objects.filter(user=self.user1).count(),
+            initial_track_count + 2,
+        )
+        self.assertTrue(
+            Project.objects.filter(user=self.user1, title="Machine Learning").exists()
+        )
+        self.assertTrue(
+            Project.objects.filter(user=self.user1, title="Japanese").exists()
+        )

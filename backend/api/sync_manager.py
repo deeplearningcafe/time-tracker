@@ -206,30 +206,51 @@ class SyncManager:
 
         c_meta = meta.get("common", {})
         # despite not changing it is imported again
-        if (
+        common_needs_update = (
             c_meta.get("machine_id") != self.machine_id
             and c_meta.get("timestamp", 0) > last_sync_ts
-        ):
-            common_path = os.path.join(self.current_dir, "common.enc")
-            data = self._read_and_decrypt(common_path)
-            if data:
-                UserDataService.import_user_data(self.user, data)
-            meta["common"]["machine_id"] = self.machine_id
+        )
 
-        # only updated years are read
+        years_to_update = []
         for year_str, y_meta in meta.get("years", {}).items():
             if (
                 y_meta.get("machine_id") != self.machine_id
                 and y_meta.get("timestamp", 0) > last_sync_ts
             ):
-                year = int(year_str)
-                current_year = timezone.now().year
-                folder = self.current_dir if year == current_year else self.cache_dir
-                filepath = os.path.join(folder, f"tracks_{year}.enc")
-                data = self._read_and_decrypt(filepath)
-                if data:
-                    UserDataService.import_user_data(self.user, data)
-                y_meta["machine_id"] = self.machine_id
+                years_to_update.append(int(year_str))
+
+        if not common_needs_update and not years_to_update:
+            return
+
+        merged_data = {"projects": [], "time_entries": [], "time_tracks": []}
+
+        # Always load common data if we are importing anything to ensure id_mapping
+        # can resolve references correctly for time tracks.
+        common_path = os.path.join(self.current_dir, "common.enc")
+        common_data = self._read_and_decrypt(common_path)
+        if common_data:
+            merged_data["projects"].extend(common_data.get("projects", []))
+            merged_data["time_entries"].extend(common_data.get("time_entries", []))
+
+        for year in years_to_update:
+            current_year = timezone.now().year
+            folder = self.current_dir if year == current_year else self.cache_dir
+            filepath = os.path.join(folder, f"tracks_{year}.enc")
+            tracks_data = self._read_and_decrypt(filepath)
+            if tracks_data:
+                merged_data["time_tracks"].extend(tracks_data.get("time_tracks", []))
+
+        if (
+            merged_data["projects"]
+            or merged_data["time_entries"]
+            or merged_data["time_tracks"]
+        ):
+            UserDataService.import_user_data(self.user, merged_data)
+
+        if common_needs_update:
+            meta["common"]["machine_id"] = self.machine_id
+        for year in years_to_update:
+            meta["years"][str(year)]["machine_id"] = self.machine_id
 
         self._write_meta(meta)
 

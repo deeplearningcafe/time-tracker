@@ -238,7 +238,6 @@ class TimeEntryImportSerializer(serializers.Serializer):
 
     id = serializers.UUIDField(required=False)
     project_id = serializers.UUIDField(required=False)
-    project_title = serializers.CharField(max_length=200)
     name = serializers.CharField(max_length=255)
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField(required=False)
@@ -250,8 +249,6 @@ class TimeTrackImportSerializer(serializers.Serializer):
 
     id = serializers.UUIDField(required=False)
     time_entry_id = serializers.UUIDField(required=False)
-    time_entry_project_title = serializers.CharField(max_length=200)
-    time_entry_name = serializers.CharField(max_length=255)
     start_time = serializers.DateTimeField()
     end_time = serializers.DateTimeField(required=False, allow_null=True)
     updated_at = serializers.DateTimeField(required=False)
@@ -268,3 +265,43 @@ class DataImportSerializer(serializers.Serializer):
     projects = ProjectImportSerializer(many=True, required=False)
     time_entries = TimeEntryImportSerializer(many=True, required=False)
     time_tracks = TimeTrackImportSerializer(many=True, required=False)
+
+    def validate(self, data):
+        """
+        Validates referential integrity of projects and time entries.
+        """
+        user = self.context.get("user")
+        if not user:
+            return data
+
+        incoming_pids = {str(p["id"]) for p in data.get("projects", []) if "id" in p}
+        incoming_tids = {
+            str(te["id"]) for te in data.get("time_entries", []) if "id" in te
+        }
+
+        db_pids = set(Project.objects.filter(user=user).values_list("id", flat=True))
+        db_pids_str = {str(pid) for pid in db_pids}
+        all_valid_pids = incoming_pids.union(db_pids_str)
+
+        # time entry pid must be on incoming or db pids
+        for te in data.get("time_entries", []):
+            proj_id = te.get("project_id")
+            if proj_id and str(proj_id) not in all_valid_pids:
+                raise serializers.ValidationError(
+                    f"Invalid project reference: {proj_id}"
+                )
+
+        db_tids = set(
+            TimeEntry.objects.filter(project__user=user).values_list("id", flat=True)
+        )
+        db_tids_str = {str(tid) for tid in db_tids}
+        all_valid_tids = incoming_tids.union(db_tids_str)
+
+        for tt in data.get("time_tracks", []):
+            te_id = tt.get("time_entry_id")
+            if te_id and str(te_id) not in all_valid_tids:
+                raise serializers.ValidationError(
+                    f"Invalid time entry reference: {te_id}"
+                )
+
+        return data

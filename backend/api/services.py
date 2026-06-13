@@ -1,11 +1,13 @@
 import json
 import csv
 import io
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.db.models import Q
 from django.utils import timezone
+from rest_framework import serializers
 from .models import Project, TimeEntry, TimeTrack
 from .serializers import DataImportSerializer
 
@@ -17,13 +19,15 @@ class UserDataService:
     """
 
     @staticmethod
-    def parse_toggl_csv(csv_file):
+    def parse_toggl_csv(csv_file, user):
         """
-        Parses a Toggl Track CSV export and converts it to the app's JSON
-        format. Assumes Europe/Madrid timezone for the local times.
+        Parses a Toggl Track CSV export and converts it to the app's modern JSON
+        format by generating deterministic UUIDs. Assumes Europe/Madrid timezone
+        for the local times.
 
         Args:
             csv_file: The uploaded CSV file object.
+            user: User object from the database to link the data
         Returns:
             dict: The parsed data in the application's JSON structure.
         """
@@ -46,13 +50,8 @@ class UserDataService:
         rows.sort(key=lambda x: (x.get("Start date", ""), x.get("Start time", "")))
 
         for row in rows:
-            project_title = row.get("Project", "").strip()
-            if not project_title:
-                project_title = "No project"
-
-            entry_name = row.get("Description", "").strip()
-            if not entry_name:
-                entry_name = "No name"
+            project_title = row.get("Project", "").strip() or "No project"
+            entry_name = row.get("Description", "").strip() or "No name"
 
             start_date_str = row.get("Start date", "").strip()
             start_time_str = row.get("Start time", "").strip()
@@ -82,27 +81,48 @@ class UserDataService:
             if not start_dt:
                 continue
 
+            # Generate Deterministic UUIDs to ensure idempotency
+            project_id = str(
+                uuid.uuid5(uuid.NAMESPACE_DNS, f"{user.id}-project-{project_title}")
+            )
+            entry_id = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_DNS, f"{user.id}-entry-{project_id}-{entry_name}"
+                )
+            )
+            track_id = str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_DNS,
+                    f"{user.id}-track-{entry_id}-{start_dt.isoformat()}",
+                )
+            )
+
             if project_title not in projects:
                 projects[project_title] = {
+                    "id": project_id,
                     "title": project_title,
                     "color": "000000",
                     "created_at": start_dt.isoformat(),
+                    "updated_at": start_dt.isoformat(),
                 }
 
             entry_key = (project_title, entry_name)
             if entry_key not in time_entries:
                 time_entries[entry_key] = {
-                    "project_title": project_title,
+                    "id": entry_id,
+                    "project_id": project_id,
                     "name": entry_name,
                     "created_at": start_dt.isoformat(),
+                    "updated_at": start_dt.isoformat(),
                 }
 
             time_tracks.append(
                 {
-                    "entry_project_title": project_title,
-                    "entry_name": entry_name,
+                    "id": track_id,
+                    "time_entry_id": entry_id,
                     "start_time": start_dt.isoformat(),
                     "end_time": end_dt.isoformat() if end_dt else None,
+                    "updated_at": start_dt.isoformat(),
                 }
             )
 
@@ -205,7 +225,7 @@ class UserDataService:
 
         for data in data_list:
             for p in data.get("projects", []):
-                key = p.get("id", p["title"])
+                key = p.get("id")
                 if key not in merged_projects:
                     merged_projects[key] = p
                 else:
@@ -217,7 +237,7 @@ class UserDataService:
                         merged_projects[key]["created_at"] = p["created_at"]
 
             for te in data.get("time_entries", []):
-                key = te.get("id", (te.get("project_title"), te["name"]))
+                key = te.get("id")
                 if key not in merged_entries:
                     merged_entries[key] = te
                 else:
@@ -241,127 +261,119 @@ class UserDataService:
         Replaces the user's data with the provided dictionary.
         Executes within a transaction to ensure integrity.
         """
-        serializer = DataImportSerializer(data=data)
-        serializer.is_valid(raise_exception=True)
+        serializer = DataImportSerializer(data=data, context={"user": user})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except serializers.ValidationError:
+            raise IntegrityError("Invalid reference or constraint.")
+
         validated_data = serializer.validated_data
 
+        # Maps incoming CSV UUIDs to existing Native UUIDs to prevent orphans
+        id_mapping = {}
+
         with transaction.atomic():
-            is_new_format = any(
-                "id" in p for p in validated_data.get("projects", [])
-            ) or any("id" in t for t in validated_data.get("time_tracks", []))
-
-            if not is_new_format:
-                # legacy (Delete-then-insert)
-                # 1. Clear existing data for the user.
-                Project.objects.filter(user=user).delete()
-
-                projects_to_create = [
-                    Project(
-                        user=user,
-                        title=p["title"],
-                        color=p["color"],
-                        created_at=p["created_at"],
-                    )
-                    for p in validated_data.get("projects", [])
-                ]
-                Project.objects.bulk_create(projects_to_create)
-                projects_map = {p.title: p for p in Project.objects.filter(user=user)}
-
-                entries_to_create = [
-                    TimeEntry(
-                        project=projects_map[te["project_title"]],
-                        name=te["name"],
-                        created_at=te["created_at"],
-                    )
-                    for te in validated_data.get("time_entries", [])
-                ]
-                TimeEntry.objects.bulk_create(entries_to_create)
-
-                # Map entries by (Project Title, Entry Name) tuple
-                entries_map = {
-                    (te.project.title, te.name): te
-                    for te in TimeEntry.objects.filter(project__user=user)
-                }
-
-                tracks_to_create = []
-                for tt in validated_data.get("time_tracks", []):
-                    key = (tt["entry_project_title"], tt["entry_name"])
-                    if key in entries_map:
-                        tracks_to_create.append(
-                            TimeTrack(
-                                user=user,
-                                time_entry=entries_map[key],
-                                start_time=tt["start_time"],
-                                end_time=tt.get("end_time"),
-                            )
-                        )
-                TimeTrack.objects.bulk_create(tracks_to_create)
-                return
-
             # LWW Merge (Delta Sync)
             for p_data in validated_data.get("projects", []):
-                p_id = p_data["id"]
+                original_p_id = p_data["id"]
                 updated_at = p_data.get("updated_at", timezone.now())
-                p = Project.objects.filter(id=p_id).first()
-                # Conflict Resolution (Last-Write-Wins)
-                if not p or p.updated_at < updated_at:
-                    defaults = {
-                        "user": user,
-                        "title": p_data["title"],
-                        "color": p_data["color"],
-                        "created_at": p_data["created_at"],
-                        "deleted_at": p_data.get("deleted_at"),
-                    }
-                    obj, created = Project.objects.get_or_create(
-                        id=p_id, defaults=defaults
-                    )
-                    if not created:
-                        Project.objects.filter(id=p_id).update(
-                            **defaults, updated_at=updated_at
+
+                p = Project.objects.filter(id=original_p_id).first()
+                if not p:
+                    # Check for title clash as different id
+                    p = Project.objects.filter(
+                        user=user, title=p_data["title"], deleted_at__isnull=True
+                    ).first()
+
+                if p:
+                    id_mapping[original_p_id] = p.id
+                    # Conflict Resolution (Last-Write-Wins)
+                    if p.updated_at < updated_at:
+                        Project.objects.filter(id=p.id).update(
+                            title=p_data["title"],
+                            color=p_data["color"],
+                            updated_at=updated_at,
+                            deleted_at=p_data.get("deleted_at"),
                         )
-                    else:
-                        # even if exists force the updated_at to remote
-                        Project.objects.filter(id=p_id).update(updated_at=updated_at)
+                else:
+                    Project.objects.create(
+                        id=original_p_id,
+                        user=user,
+                        title=p_data["title"],
+                        color=p_data["color"],
+                        created_at=p_data["created_at"],
+                        updated_at=updated_at,
+                        deleted_at=p_data.get("deleted_at"),
+                    )
 
             for te_data in validated_data.get("time_entries", []):
-                te_id = te_data["id"]
+                original_te_id = te_data["id"]
+                actual_project_id = id_mapping.get(
+                    te_data["project_id"], te_data["project_id"]
+                )
                 updated_at = te_data.get("updated_at", timezone.now())
-                te = TimeEntry.objects.filter(id=te_id).first()
-                if not te or te.updated_at < updated_at:
-                    defaults = {
-                        "project_id": te_data["project_id"],
-                        "name": te_data["name"],
-                        "created_at": te_data["created_at"],
-                        "deleted_at": te_data.get("deleted_at"),
-                    }
-                    obj, created = TimeEntry.objects.get_or_create(
-                        id=te_id, defaults=defaults
-                    )
-                    if not created:
-                        TimeEntry.objects.filter(id=te_id).update(
-                            **defaults, updated_at=updated_at
+
+                te = TimeEntry.objects.filter(id=original_te_id).first()
+                if not te:
+                    # Check for name + project clash
+                    te = TimeEntry.objects.filter(
+                        project_id=actual_project_id,
+                        name=te_data["name"],
+                        deleted_at__isnull=True,
+                    ).first()
+
+                if te:
+                    id_mapping[original_te_id] = te.id
+                    if te.updated_at < updated_at:
+                        TimeEntry.objects.filter(id=te.id).update(
+                            project_id=actual_project_id,
+                            name=te_data["name"],
+                            updated_at=updated_at,
+                            deleted_at=te_data.get("deleted_at"),
                         )
-                    else:
-                        TimeEntry.objects.filter(id=te_id).update(updated_at=updated_at)
+                else:
+                    TimeEntry.objects.create(
+                        id=original_te_id,
+                        project_id=actual_project_id,
+                        name=te_data["name"],
+                        created_at=te_data["created_at"],
+                        updated_at=updated_at,
+                        deleted_at=te_data.get("deleted_at"),
+                    )
 
             for tt_data in validated_data.get("time_tracks", []):
-                tt_id = tt_data["id"]
+                original_tt_id = tt_data["id"]
+                actual_te_id = id_mapping.get(
+                    tt_data["time_entry_id"], tt_data["time_entry_id"]
+                )
                 updated_at = tt_data.get("updated_at", timezone.now())
-                tt = TimeTrack.objects.filter(id=tt_id).first()
-                if not tt or tt.updated_at < updated_at:
-                    defaults = {
-                        "user": user,
-                        "time_entry_id": tt_data["time_entry_id"],
-                        "start_time": tt_data["start_time"],
-                        "end_time": tt_data.get("end_time"),
-                        "deleted_at": tt_data.get("deleted_at"),
-                    }
-                    obj, created = TimeTrack.objects.get_or_create(
-                        id=tt_id, defaults=defaults
-                    )
-                    if not created:
-                        TimeTrack.objects.filter(id=tt_id).update(
-                            **defaults, updated_at=updated_at
+
+                tt = TimeTrack.objects.filter(id=original_te_id).first()
+                if not tt:
+                    # avoid duplicates
+                    tt = TimeTrack.objects.filter(
+                        time_entry_id=actual_te_id,
+                        start_time=tt_data["start_time"],
+                        end_time=tt_data.get("end_time"),
+                        deleted_at__isnull=True,
+                    ).first()
+
+                if tt:
+                    if tt.updated_at < updated_at:
+                        TimeTrack.objects.filter(id=tt.id).update(
+                            time_entry_id=actual_te_id,
+                            start_time=tt_data["start_time"],
+                            end_time=tt_data.get("end_time"),
+                            updated_at=updated_at,
+                            deleted_at=tt_data.get("deleted_at"),
                         )
-                    else:
-                        TimeTrack.objects.filter(id=tt_id).update(updated_at=updated_at)
+                else:
+                    TimeTrack.objects.create(
+                        id=original_tt_id,
+                        user=user,
+                        time_entry_id=actual_te_id,
+                        start_time=tt_data["start_time"],
+                        end_time=tt_data.get("end_time"),
+                        updated_at=updated_at,
+                        deleted_at=tt_data.get("deleted_at"),
+                    )

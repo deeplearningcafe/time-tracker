@@ -26,6 +26,7 @@ To ensure data integrity and a consistent user experience, the application enfor
 - **Updating Time Entry**: If a time entry is updated by using the `EditEntryModal` clicking on a time track, only time track is updated, not the time entry. That is if the project is changed then the time track uses the newly generated time entry, while all the previous time tracks of the old time entry are kept without changes.
 - **Synchronization Logic**: Instead of the naive delete-then-insert original logic the app uses the Last-Write-Wins such that it handles several machines used at the same time. The cloud storage always uploads the projects and time entries, and only the time tracks of the modified year. Local records are only updated if they exist in the remote with newer `updated_at`, otherwise the remote data is merged into the local database.
 - **Soft Deleting**: To avoid conflicts with several machines, records are not removed from the database instead the `deleted_at` timestamp is updated to a non null value.
+- **Data Import**: The backend treats all incoming data (CSV from toggl track or JSON from the app itself) as a "Delta", it uses LWW merge logic such that the data is merged instead of deleting and creating all.
 
 ## 3. Backend Subsystem
 
@@ -47,7 +48,7 @@ All dataset entities expect users have an `UUIDField`, `updated_at` and `deleted
 - **Summary API (`/api/summary/`)**: Aggregates time tracks by date, project, and entry for reporting. It handles timezone-aware truncation and correctly splits multi-day tracks.
 - **Data Portability (`/api/data/`)**:
   - `GET /export/`: Serializes all user data into a JSON file.
-  - `POST /import-data/`: Replaces the user's existing data with the uploaded JSON/CSV file inside an atomic transaction.
+  - `POST /import-data/`: **Merges** the user's existing data with the uploaded JSON/CSV file inside an atomic transaction.
 - **Synchronization (`/api/sync/`)**:
   - `POST /trigger_upload/`: Encrypts the user's data using Fernet and writes it to the local sync directory.
   - `POST /startup_check/`: Checks `meta.json` in the sync directory. If the `machine_id` differs, it decrypts and imports the newer data.

@@ -17,12 +17,14 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Suggestions Reactivity**: When creating a new time entry, the suggerstions dropdown does not include it until the whole page is refreshed.
 - **Avg Daily Hours do not include future dates**: In the `SummaryView` the avg daily hours should only compute current and past days not the future.
 - **Every time the frontend is refreshed it checks the cloud for data**: This is an expensive operation as downloading the `meta.json` takes some time.
+- **CalendarView project distribution bar in week mode**: The component should show the whole week, now it shows of a single day of the week (wednesday).
 
 ## 🎨 UI/UX Improvements
 
 - **DateRangeNavigator Project Filter**: Replace the simple text box for project filtering in the Summary view with a proper dropdown `ProjectSelector`.
 - **Sync Status UI**: Add a toast/popup notification to display the status of data synchronization (uploading/downloading) to keep the user informed.
 - **Double-Click to Now**: Allow double-clicking the time picker to auto-scroll and focus the `CalendarView` exactly on the current time.
+- **DateRangeNavigator fixed size**: In the `CalendarView` the data range navigator changes its size depending on the date, making the fast navagation difficult.
 
 ## ✨ Features
 
