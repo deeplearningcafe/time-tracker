@@ -264,8 +264,8 @@ class UserDataService:
         serializer = DataImportSerializer(data=data, context={"user": user})
         try:
             serializer.is_valid(raise_exception=True)
-        except serializers.ValidationError:
-            raise IntegrityError("Invalid reference or constraint.")
+        except serializers.ValidationError as e:
+            raise IntegrityError(f"Validation failed: {serializer.errors}")
 
         validated_data = serializer.validated_data
 
@@ -348,7 +348,7 @@ class UserDataService:
                 )
                 updated_at = tt_data.get("updated_at", timezone.now())
 
-                tt = TimeTrack.objects.filter(id=original_te_id).first()
+                tt = TimeTrack.objects.filter(id=original_tt_id).first()
                 if not tt:
                     # avoid duplicates
                     tt = TimeTrack.objects.filter(
@@ -377,3 +377,10 @@ class UserDataService:
                         updated_at=updated_at,
                         deleted_at=tt_data.get("deleted_at"),
                     )
+
+    @staticmethod
+    def delete_user_data(user):
+        with transaction.atomic():
+            TimeTrack.objects.filter(user=user).delete()
+            TimeEntry.objects.filter(project__user=user).delete()
+            Project.objects.filter(user=user).delete()

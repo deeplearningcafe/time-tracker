@@ -15,7 +15,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .models import Project, TimeEntry, TimeTrack
+from .models import Project, TimeEntry, TimeTrack, SyncState
 from .serializers import (
     ProjectSerializer,
     DateRangeSerializer,
@@ -589,12 +589,12 @@ class DataPortabilityViewSet(viewsets.ViewSet):
 
             UserDataService.import_user_data(user, merged_data)
 
-        except IntegrityError:
-            # Catches foreign key violations (e.g., bad project_id)
+        except IntegrityError as e:
             return Response(
-                {"error": "Data integrity error: Invalid reference or constraint."},
+                {"error": f"Data integrity error: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         except KeyError as e:
             return Response(
                 {"error": f"Data integrity error: Missing reference {e}."},
@@ -616,6 +616,34 @@ class DataPortabilityViewSet(viewsets.ViewSet):
             )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["delete"], url_path="delete-all")
+    def delete_all(self, request):
+        """
+        Hard deletes all data for the authenticated user and wipes the cloud sync.
+        This is a destructive "Nuke" operation.
+        """
+        user = request.user
+
+        try:
+            with transaction.atomic():
+                # cascade automatically deletes everything
+                # but just in case
+                TimeTrack.objects.filter(user=user).delete()
+                TimeEntry.objects.filter(project__user=user).delete()
+                Project.objects.filter(user=user).delete()
+
+                SyncState.objects.filter(user=user).delete()
+
+            manager = SyncManager(user)
+            manager.wipe_data()
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response(
+                {"error": f"An unexpected error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class SyncViewSet(viewsets.ViewSet):

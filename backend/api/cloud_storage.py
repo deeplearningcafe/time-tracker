@@ -74,3 +74,24 @@ class RcloneAdapter:
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             print(f"Rclone upload error for {rel_path}: {e}")
             return False
+
+    def purge_remote(self):
+        """
+        Purges the entire remote directory to ensure a clean slate in the cloud.
+        Used when the user requests to delete all their data.
+        """
+        if not self.is_configured:
+            return False
+
+        try:
+            # 'rclone purge' deletes the directory and all its contents
+            subprocess.run(
+                [self.rclone_cmd, "purge", self.remote_base],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"Rclone purge error for {self.remote_base}: {e}")
+            return False

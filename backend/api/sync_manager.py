@@ -106,11 +106,15 @@ class SyncManager:
     def should_download(self):
         """
         Determines if the local data is outdated compared to the sync folder.
-        Returns True if the last update was made by a DIFFERENT machine.
+        Returns True if the last update was made by a DIFFERENT machine,
+        or if a global erase_data flag is newer than the last sync.
         """
         meta = self._read_meta()
         sync_state, _ = SyncState.objects.get_or_create(user=self.user)
         last_sync_ts = sync_state.last_sync_at.timestamp()
+
+        if meta.get("erase_data", 0) > last_sync_ts:
+            return True
 
         c_meta = meta.get("common", {})
         if (
@@ -198,11 +202,16 @@ class SyncManager:
     def import_from_drive(self):
         """
         Reads encrypted data from the sync folder, decrypts it, and imports it.
+        If the erase_data flag is triggered, it wipes the local DB before importing.
         """
 
         meta = self._read_meta()
         sync_state, _ = SyncState.objects.get_or_create(user=self.user)
         last_sync_ts = sync_state.last_sync_at.timestamp()
+
+        # Check if another machine requested a global data wipe
+        erase_ts = meta.get("erase_data", 0)
+        needs_erase = erase_ts > last_sync_ts
 
         c_meta = meta.get("common", {})
         # despite not changing it is imported again
@@ -219,8 +228,12 @@ class SyncManager:
             ):
                 years_to_update.append(int(year_str))
 
-        if not common_needs_update and not years_to_update:
+        if not common_needs_update and not years_to_update and not needs_erase:
             return
+
+        # Execute the wipe locally before importing any new data
+        if needs_erase:
+            UserDataService.delete_user_data(self.user)
 
         merged_data = {"projects": [], "time_entries": [], "time_tracks": []}
 
@@ -257,3 +270,31 @@ class SyncManager:
         sync_state, _ = SyncState.objects.get_or_create(user=self.user)
         sync_state.last_sync_at = timezone.now()
         sync_state.save()
+
+    def wipe_data(self):
+        """
+        Wipes all local sync files and purges the remote cloud directory.
+        Creates a new meta.json with the erase_data flag to instruct other machines to wipe.
+        Used for the 'Delete All My Data' hard reset.
+        """
+        self.storage.purge_remote()
+
+        # Delete all local data
+        if os.path.exists(self.drive_path):
+            for item in os.listdir(self.drive_path):
+                item_path = os.path.join(self.drive_path, item)
+                try:
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                except Exception as e:
+                    print(f"Error deleting local sync file {item_path}: {e}")
+
+        os.makedirs(self.current_dir, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+        # meta.json with the erase_data flag
+        meta = {"erase_data": time.time(), "common": {}, "years": {}}
+        self._write_meta(meta)
+        self.storage.upload_file("meta.json")

@@ -21,6 +21,9 @@ export const dataStore = {
     SET_IMPORT_ERROR(state, error) {
       state.importError = error;
     },
+    SET_DELETE_ERROR(state, error) {
+      state.deleteError = error;
+    },
   },
   actions: {
     async fetchAvailableYears() {
@@ -152,5 +155,34 @@ export const dataStore = {
         commit('SET_SYNC_STATUS', 'idle');
       }
     },
-  },
+    async deleteAllData({ commit, dispatch, rootGetters }) {
+      commit('SET_DELETE_STATUS', 'deleting');
+      commit('SET_DELETE_ERROR', null);
+
+      try {
+        await axiosInstance.delete('/data/delete-all/');
+        commit('SET_DELETE_STATUS', 'success');
+
+        // Clear local state and refetch to sync UI with the empty database
+        await dispatch('time/resetState', null, { root: true });
+
+        const dateRange = rootGetters['ui/getDateRange'];
+        await Promise.all([
+          dispatch('time/fetchProjects', null, { root: true }),
+          dispatch('time/fetchRangeData', {
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate
+          }, { root: true }),
+        ]);
+
+        setTimeout(() => commit('SET_DELETE_STATUS', 'idle'), 3000);
+      } catch (error) {
+        commit('SET_DELETE_STATUS', 'error');
+        const message = error.response?.data?.message ||
+          error.response?.data?.error ||
+          'An unknown error occurred during deletion.';
+        commit('SET_DELETE_ERROR', message);
+      }
+    },
+  }
 };

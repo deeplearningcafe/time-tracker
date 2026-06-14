@@ -61,18 +61,19 @@
           Import Data
         </h2>
 
-        <!-- Warning Alert -->
-        <div class="bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-lg mb-6">
+        <!-- Info Alert -->
+        <div class="bg-blue-900/10 border-l-4 border-blue-500 p-4 rounded-r-lg mb-6">
           <div class="flex items-start">
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-red-400">Warning: Destructive Action</h3>
-              <div class="mt-1 text-sm text-red-300/80">
-                <p>Importing data will <strong>permanently delete</strong> your current local data and replace it with
-                  the imported files.</p>
+              <h3 class="text-sm font-medium text-blue-400">Import Information</h3>
+              <div class="mt-1 text-sm text-blue-300/80">
+                <p>Importing data will <strong>merge</strong> the uploaded files with your current local data. Existing
+                  records will be updated if the imported data is newer, without deleting your history.</p>
               </div>
             </div>
           </div>
         </div>
+
 
         <!-- Drop Zone -->
         <div
@@ -162,6 +163,50 @@
           </div>
         </div>
       </div>
+      <!-- Danger Zone Section -->
+      <div
+        class="bg-gray-900/50 p-8 rounded-2xl border border-red-900/50 shadow-lg backdrop-blur-sm transition-all hover:border-red-700/50 mt-10">
+        <h2 class="text-2xl font-bold text-red-500 flex items-center gap-2 mb-4">
+          <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+            </path>
+          </svg>
+          Danger Zone
+        </h2>
+
+        <!-- Warning Alert -->
+        <div class="bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-lg mb-6">
+          <div class="flex items-start">
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-red-400">Warning: Destructive Action</h3>
+              <div class="mt-1 text-sm text-red-300/80">
+                <p>This action will <strong>permanently delete</strong> all your projects, time entries, and tracks.
+                  This cannot be undone.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="deleteStatus === 'error'"
+          class="mb-5 p-4 bg-red-900/20 border-l-4 border-red-500 rounded-r-lg text-red-400 text-sm">
+          <strong class="block mb-1 text-red-300">Deletion Failed</strong>
+          {{ deleteError || 'An error occurred during deletion.' }}
+        </div>
+
+        <div v-if="deleteStatus === 'success'"
+          class="mb-5 p-4 bg-green-900/20 border-l-4 border-green-500 rounded-r-lg text-green-400 text-sm">
+          <strong>Success!</strong> All data has been deleted.
+        </div>
+
+        <div class="flex justify-end">
+          <button @click="handleDeleteAll" :disabled="isDeleting"
+            class="px-8 py-3 rounded-lg font-bold transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white">
+            <span v-if="isDeleting">Deleting Data...</span>
+            <span v-else>Delete All My Data</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -181,9 +226,12 @@ const selectedYear = ref('all');
 const importStatus = computed(() => store.state.data.importStatus);
 const exportStatus = computed(() => store.state.data.exportStatus);
 const importError = computed(() => store.state.data.importError);
+const deleteStatus = computed(() => store.state.data.deleteStatus);
+const deleteError = computed(() => store.state.data.deleteError);
 
 const isExporting = computed(() => exportStatus.value === 'exporting');
 const isImporting = computed(() => importStatus.value === 'importing');
+const isDeleting = computed(() => deleteStatus.value === 'deleting');
 
 // --- Computed Styles ---
 const dropZoneClasses = computed(() => {
@@ -255,14 +303,18 @@ const clearFiles = () => {
 const handleImport = async () => {
   if (selectedFiles.value.length === 0) return;
 
-  const confirmMsg = "Warning: Importing data will permanently delete your current local data. Continue?";
-  if (!window.confirm(confirmMsg)) return;
-
   await store.dispatch('data/importData', { files: selectedFiles.value });
 
   if (store.state.data.importStatus === 'success') {
     selectedFiles.value = [];
   }
+};
+
+const handleDeleteAll = async () => {
+  const confirmMsg = "Are you absolutely sure? This will permanently delete all your tracking data.";
+  if (!window.confirm(confirmMsg)) return;
+
+  await store.dispatch('data/deleteAllData');
 };
 </script>
 

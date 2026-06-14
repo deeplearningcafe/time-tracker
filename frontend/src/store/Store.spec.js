@@ -501,5 +501,35 @@ describe('Vuex Store', () => {
 
       consoleSpy.mockRestore();
     });
+
+    it('deleteAllData action success and re-fetches data', async () => {
+      vi.useFakeTimers();
+      axiosInstance.delete.mockResolvedValue({ status: 204 });
+      axiosInstance.get.mockResolvedValue({ data: [] });
+
+      const actionPromise = store.dispatch('data/deleteAllData');
+
+      await actionPromise;
+
+      expect(axiosInstance.delete).toHaveBeenCalledWith('/data/delete-all/');
+      expect(store.state.data.deleteStatus).toBe('success');
+      expect(axiosInstance.get).toHaveBeenCalledWith('/projects/');
+
+      vi.runAllTimers();
+      expect(store.state.data.deleteStatus).toBe('idle');
+
+      vi.useRealTimers();
+    });
+
+    it('deleteAllData action failure', async () => {
+      const errorMsg = 'Deletion failed';
+      const error = { response: { data: { message: errorMsg } } };
+      axiosInstance.delete.mockRejectedValue(error);
+
+      await store.dispatch('data/deleteAllData');
+
+      expect(store.state.data.deleteStatus).toBe('error');
+      expect(store.state.data.deleteError).toBe(errorMsg);
+    });
   });
 });

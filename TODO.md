@@ -18,6 +18,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Avg Daily Hours do not include future dates**: In the `SummaryView` the avg daily hours should only compute current and past days not the future.
 - **Every time the frontend is refreshed it checks the cloud for data**: This is an expensive operation as downloading the `meta.json` takes some time.
 - **CalendarView project distribution bar in week mode**: The component should show the whole week, now it shows of a single day of the week (wednesday).
+- **Time tracks not present after importing and refresh**: Testing the delete all data, then importing from toggl track if we refresh after it reads from cloud (only meta) and then no time tracks but entries and projects are kept.
 
 ## 🎨 UI/UX Improvements
 
@@ -25,6 +26,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Sync Status UI**: Add a toast/popup notification to display the status of data synchronization (uploading/downloading) to keep the user informed.
 - **Double-Click to Now**: Allow double-clicking the time picker to auto-scroll and focus the `CalendarView` exactly on the current time.
 - **DateRangeNavigator fixed size**: In the `CalendarView` the data range navigator changes its size depending on the date, making the fast navagation difficult.
+- **Sync and delete states**: Provide visual indicators of synchronization and deleting of the remote because these operations take time.
 
 ## ✨ Features
 
@@ -45,6 +47,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Encryption Caching**: Implement caching for the encryption process to only re-encrypt modified data, optimizing the sync upload (as older time entries rarely change).
 - **Remove Duplicated Code**: Many date manipulation logic is repeated across files.
 - **Refactor Endpoint and functions names**: Some endpoints like the `trigger_upload` are not really informative as this endpoint doesn't actually upload anything, it exports data to local dir.
+- **Sync on refresh**: The app should read from cloud on start and write on end, only that 2 times.
 
 ## 🧪 Testing
 
