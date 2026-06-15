@@ -43,7 +43,6 @@ export const timeStore = {
       if (!track) return null;
       const entry = state.timeEntries[track.time_entry];
       const project = entry ? state.projects[entry.project] : null;
-      console.log("inside hydrateTrack for track, with entry and project, ", track, entry, project)
       return {
         ...track,
         name: entry ? entry.name : '',

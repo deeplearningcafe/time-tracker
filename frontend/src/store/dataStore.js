@@ -130,9 +130,15 @@ export const dataStore = {
       }
     },
     async checkStartupSync({ commit, dispatch, rootGetters }) {
+      if (sessionStorage.getItem('hasSyncedOnStartup')) {
+        return;
+      }
       commit('SET_SYNC_STATUS', 'startup_syncing');
       try {
         const response = await axiosInstance.post('/sync/startup_check/');
+        console.log("status of sync", response.data.status);
+        sessionStorage.setItem('hasSyncedOnStartup', 'true');
+
         if (response.data.status === 'downloaded') {
           console.log("New data synced from drive. Reloading state.");
           // Data changed, reload everything

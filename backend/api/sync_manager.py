@@ -171,6 +171,9 @@ class SyncManager:
             ).values_list("start_time__year", flat=True)
         )
 
+        if not common_modified and not modified_years and meta.get("common"):
+            return []
+
         # Always include the current year
         modified_years.add(current_year)
 
