@@ -6,7 +6,9 @@ export const dataStore = {
     importStatus: 'idle', // 'idle' | 'importing' | 'success' | 'error'
     exportStatus: 'idle',
     syncStatus: 'idle',
+    deleteStatus: 'idle',
     importError: null,
+    deleteError: null,
   }),
   mutations: {
     SET_IMPORT_STATUS(state, status) {
@@ -17,6 +19,9 @@ export const dataStore = {
     },
     SET_SYNC_STATUS(state, status) {
       state.syncStatus = status;
+    },
+    SET_DELETE_STATUS(state, status) {
+      state.deleteStatus = status;
     },
     SET_IMPORT_ERROR(state, error) {
       state.importError = error;

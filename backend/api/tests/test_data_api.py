@@ -299,7 +299,7 @@ class TestDataAPI(APITestCase):
 
         self.assertEqual(
             response.data["error"],
-            "Data integrity error: Invalid reference or constraint.",
+            "Data integrity error: Validation failed: {'non_field_errors': [ErrorDetail(string='Invalid project reference: 99999999-9999-9999-9999-999999999999', code='invalid')]}",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         # Verify data was not deleted due to the transaction rollback

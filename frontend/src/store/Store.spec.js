@@ -45,6 +45,10 @@ describe('Vuex Store', () => {
   const getItemMock = vi.fn();
   const removeItemMock = vi.fn();
 
+  const setSessionItemMock = vi.fn();
+  const getSessionItemMock = vi.fn();
+  const removeSessionItemMock = vi.fn();
+
   beforeEach(() => {
     vi.resetAllMocks();
 
@@ -54,6 +58,13 @@ describe('Vuex Store', () => {
       getItem: getItemMock,
       removeItem: removeItemMock,
     });
+
+    vi.stubGlobal('sessionStorage', {
+      setItem: setSessionItemMock,
+      getItem: getSessionItemMock,
+      removeItem: removeSessionItemMock,
+    });
+
     axiosInstance.get.mockReset();
     axiosInstance.post.mockReset();
     axiosInstance.put.mockReset();

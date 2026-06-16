@@ -159,7 +159,8 @@ const liveTrackStartTime = computed(() => {
 
 const filteredSuggestions = computed(() => {
   if (!description.value) {
-    return recentTimeEntries.value.slice(-10);
+    // take top 10 recent ones
+    return recentTimeEntries.value.slice(0, 10);
   }
   const searchTerm = description.value.toLowerCase();
   return recentTimeEntries.value.filter(entry =>
