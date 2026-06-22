@@ -163,6 +163,36 @@
           </div>
         </div>
       </div>
+
+      <div
+        class="bg-gray-900/50 p-8 rounded-2xl border border-gray-800 shadow-lg backdrop-blur-sm transition-all hover:border-gray-700">
+        <h2 class="text-2xl font-bold text-white flex items-center gap-2 mb-4">
+          <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+            </path>
+          </svg>
+          Cloud Synchronization
+        </h2>
+        <div class="flex items-center justify-between">
+          <div class="pr-6">
+            <h3 class="text-lg font-medium text-gray-200">Enable Rclone Sync</h3>
+            <p class="text-gray-400 text-sm mt-1">
+              Automatically synchronize your data with the cloud on startup. Disabling this will eliminate the sync
+              delay and is recommended if you share the database locally.
+            </p>
+          </div>
+          <div class="flex items-center">
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="isSyncEnabled" @change="toggleSync" class="sr-only peer">
+              <div
+                class="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600">
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Danger Zone Section -->
       <div
         class="bg-gray-900/50 p-8 rounded-2xl border border-red-900/50 shadow-lg backdrop-blur-sm transition-all hover:border-red-700/50 mt-10">
@@ -214,6 +244,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useStore } from 'vuex';
+import { getCookie, setCookie } from '../utils/cookies';
 
 const store = useStore();
 const fileInputRef = ref(null);
@@ -243,6 +274,8 @@ const dropZoneClasses = computed(() => {
 // --- Lifecycle ---
 onMounted(async () => {
   availableYears.value = await store.dispatch('data/fetchAvailableYears');
+  const syncCookie = getCookie('rclone_sync_enabled');
+  isSyncEnabled.value = syncCookie === 'true';
 });
 
 onUnmounted(() => {
@@ -250,6 +283,10 @@ onUnmounted(() => {
 });
 
 // --- Methods ---
+const toggleSync = () => {
+  setCookie('rclone_sync_enabled', isSyncEnabled.value, 365);
+};
+
 const handleExport = () => {
   store.dispatch('data/exportData', { year: selectedYear.value });
 };

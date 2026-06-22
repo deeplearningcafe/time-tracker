@@ -97,10 +97,11 @@ if "test" in sys.argv or "pytest" in sys.modules:
     ]
 
 else:
+    db_path = os.getenv("DB_PATH")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": db_path if db_path else BASE_DIR / "db.sqlite3",
         }
     }
 

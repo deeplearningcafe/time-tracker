@@ -17,6 +17,7 @@ import { watch, onMounted, ref, computed } from 'vue';
 import { useStore } from 'vuex';
 import { RouterView, useRoute } from 'vue-router';
 import Sidebar from './components/layout/Sidebar.vue';
+import { getCookie } from './utils/cookies';
 
 const store = useStore();
 const route = useRoute();
@@ -34,7 +35,10 @@ onMounted(async () => {
     try {
       await store.dispatch('auth/fetchUser');
 
-      await store.dispatch('data/checkStartupSync');
+      const syncEnabled = getCookie('rclone_sync_enabled') === 'true';
+      if (syncEnabled) {
+        await store.dispatch('data/checkStartupSync');
+      }
 
       await store.dispatch('time/fetchProjects');
     } catch (error) {
