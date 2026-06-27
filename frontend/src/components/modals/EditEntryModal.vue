@@ -470,6 +470,11 @@ watch(() => props.isVisible, (newVal) => {
 
     nextTick(() => {
       calculatePosition();
+
+      // Auto-focus when creating a new track
+      if (!isEditMode.value && descriptionInputRef.value) {
+        descriptionInputRef.value.focus();
+      }
     });
   } else {
     showSuggestions.value = false;

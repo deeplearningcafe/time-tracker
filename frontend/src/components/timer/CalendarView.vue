@@ -131,8 +131,9 @@ const MIN_DURATION_MINUTES = 5;
 
 // --- State ---
 const gridRef = ref(null);
-const gridBounds = ref(null);
 const pixelsPerMinute = ref(0);
+
+const lastMouseCoords = ref({ x: 0, y: 0 });
 
 // Drag Creation State
 const isDragging = ref(false);
@@ -408,17 +409,35 @@ const yToTime = (y, selectedDate) => {
 };
 
 // --- Event Handlers: Drag to Create ---
+const handleGlobalScroll = () => {
+  if (!isDragging.value && !isMovingTrack.value && !isResizing.value) return;
+
+  // Synthesize a mouse event using the last known coordinates
+  const syntheticEvent = {
+    clientX: lastMouseCoords.value.x,
+    clientY: lastMouseCoords.value.y
+  };
+
+  if (isDragging.value) handleGridMouseMove(syntheticEvent);
+  else if (isMovingTrack.value) handleTrackMouseMove(syntheticEvent);
+  else if (isResizing.value) handleResizeMouseMove(syntheticEvent);
+};
+
+
 const handleGridMouseDown = (event) => {
   console.log('--- handleGridMouseDown FIRED ---');
   // Prevent starting a drag on right-click
   if (event.button !== 0) return;
 
-  gridBounds.value = gridRef.value?.getBoundingClientRect() ?? null;
-  if (!gridBounds.value || !dayColumnWidth.value) return;
+  // we update the bounds dynamically
+  const rect = gridRef.value?.getBoundingClientRect();
+  if (!rect || !dayColumnWidth.value) return;
 
   isDragging.value = true;
-  const x = event.clientX - gridBounds.value.left;
-  const y = event.clientY - gridBounds.value.top;
+  lastMouseCoords.value = { x: event.clientX, y: event.clientY };
+
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
 
   dragStartCoords.value = { x, y };
   dragCurrentCoords.value = { x, y };
@@ -431,13 +450,17 @@ const handleGridMouseDown = (event) => {
 
   window.addEventListener('mousemove', handleGridMouseMove);
   window.addEventListener('mouseup', handleGridMouseUp);
+  window.addEventListener('scroll', handleGlobalScroll, true);
 };
 
 const handleGridMouseMove = (event) => {
-  if (!isDragging.value || !gridBounds.value) return;
+  if (!isDragging.value || !gridRef.value) return;
+  lastMouseCoords.value = { x: event.clientX, y: event.clientY };
+
+  const rect = gridRef.value.getBoundingClientRect();
   dragCurrentCoords.value = {
-    x: event.clientX - gridBounds.value.left,
-    y: event.clientY - gridBounds.value.top,
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
   };
 };
 
@@ -445,15 +468,17 @@ const handleGridMouseUp = (event) => {
   console.log('--- handleMouseUp FIRED ---');
   window.removeEventListener('mousemove', handleGridMouseMove);
   window.removeEventListener('mouseup', handleGridMouseUp);
+  window.removeEventListener('scroll', handleGlobalScroll, true);
 
-  if (!isDragging.value || !gridBounds.value) return;
+  if (!isDragging.value || !gridRef.value) return;
   isDragging.value = false;
 
-  const finalY = event.clientY - gridBounds.value.top;
+  const rect = gridRef.value.getBoundingClientRect();
+  const finalY = event.clientY - rect.top;
   const startY = Math.min(dragStartCoords.value.y, finalY);
   const endY = Math.max(dragStartCoords.value.y, finalY);
 
-  if (Math.abs(endY - startY) < 5) return; // Ignore simple clicks
+  if (Math.abs(endY - startY) < 3) return;
 
   const selectedDate = daysInView.value[dragStartDayIndex.value];
   if (!selectedDate) return;
@@ -470,11 +495,16 @@ const handleTrackMouseDown = (e, track) => {
   movingTrackId.value = track.id;
   movingTrackSnapshot.value = { ...track };
 
-  gridBounds.value = gridRef.value?.getBoundingClientRect() ?? null;
+  const rect = gridRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  lastMouseCoords.value = { x: e.clientX, y: e.clientY };
 
   moveStartParams.value = {
-    x: e.clientX,
-    y: e.clientY,
+    initialClientX: e.clientX,
+    initialClientY: e.clientY,
+    startX: e.clientX - rect.left,
+    startY: e.clientY - rect.top,
     startTime: new Date(track.start_time).getTime(),
     // Explicitly preserves null. It does NOT fallback to currentTime.
     endTime: track.end_time ? new Date(track.end_time).getTime() : null,
@@ -482,24 +512,25 @@ const handleTrackMouseDown = (e, track) => {
 
   window.addEventListener('mousemove', handleTrackMouseMove);
   window.addEventListener('mouseup', handleTrackMouseUp);
+  window.addEventListener('scroll', handleGlobalScroll, true);
 };
 
 const handleTrackMouseMove = (e) => {
-  if (!isMovingTrack.value) return;
+  if (!isMovingTrack.value || !gridRef.value) return;
+  lastMouseCoords.value = { x: e.clientX, y: e.clientY };
 
-  const deltaY = e.clientY - moveStartParams.value.y;
+  const rect = gridRef.value.getBoundingClientRect();
+  const currentY = e.clientY - rect.top;
+  const deltaY = currentY - moveStartParams.value.startY;
   const deltaMinutes = deltaY / pixelsPerMinute.value;
 
-  // This preserves the original offset (e.g. 12:22 -> 12:27)
   const snappedDeltaMinutes = Math.round(deltaMinutes / SNAP_MINUTES) * SNAP_MINUTES;
 
   // Horizontal Drag (Day changing)
   let dayDelta = 0;
-  if (gridBounds.value && dayColumnWidth.value && daysInView.value.length > 1) {
-    const startX = moveStartParams.value.x - gridBounds.value.left;
-    const currentX = e.clientX - gridBounds.value.left;
-
-    const startCol = Math.floor(startX / dayColumnWidth.value);
+  if (dayColumnWidth.value && daysInView.value.length > 1) {
+    const currentX = e.clientX - rect.left;
+    const startCol = Math.floor(moveStartParams.value.startX / dayColumnWidth.value);
     const currentCol = Math.floor(currentX / dayColumnWidth.value);
 
     const clampedStartCol = Math.max(0, Math.min(daysInView.value.length - 1, startCol));
@@ -517,24 +548,22 @@ const handleTrackMouseMove = (e) => {
     const newEnd = new Date(moveStartParams.value.endTime + totalDeltaMs);
     movingTrackSnapshot.value.end_time = newEnd.toISOString();
   }
-
 };
 
 const handleTrackMouseUp = (e) => {
   window.removeEventListener('mousemove', handleTrackMouseMove);
   window.removeEventListener('mouseup', handleTrackMouseUp);
+  window.removeEventListener('scroll', handleGlobalScroll, true);
   console.log("Inside handleTrackMouseUp", movingTrackSnapshot.value)
   if (!isMovingTrack.value) return;
 
-  const distY = Math.abs(e.clientY - moveStartParams.value.y);
-  const distX = Math.abs(e.clientX - moveStartParams.value.x);
-  const wasDrag = distY > 5 || distX > 5;
+  const distY = Math.abs(e.clientY - moveStartParams.value.initialClientY);
+  const distX = Math.abs(e.clientX - moveStartParams.value.initialClientX);
+  const wasDrag = distY > 3 || distX > 3; // Reduced threshold for better responsiveness
 
   if (wasDrag) {
-    // this event calls directly the update tracks
     emit('update-track-times', movingTrackSnapshot.value);
   } else {
-    // this event opens the edit entry modal
     emit('select-track', movingTrackSnapshot.value);
   }
 
@@ -549,12 +578,17 @@ const handleResizeMouseDown = (e, track, edge) => {
   resizingEdge.value = edge;
   resizingTrackSnapshot.value = { ...track };
 
+  const rect = gridRef.value?.getBoundingClientRect();
+  if (!rect) return;
+
+  lastMouseCoords.value = { x: e.clientX, y: e.clientY };
+
   const effectiveEndTime = track.end_time
     ? new Date(track.end_time).getTime()
     : currentTime.value.getTime();
 
   resizeStartParams.value = {
-    y: e.clientY,
+    startY: e.clientY - rect.top,
     startTime: new Date(track.start_time).getTime(),
     endTime: effectiveEndTime,
     isLive: !track.end_time
@@ -562,12 +596,16 @@ const handleResizeMouseDown = (e, track, edge) => {
 
   window.addEventListener('mousemove', handleResizeMouseMove);
   window.addEventListener('mouseup', handleResizeMouseUp);
+  window.addEventListener('scroll', handleGlobalScroll, true);
 };
 
 const handleResizeMouseMove = (e) => {
-  if (!isResizing.value) return;
+  if (!isResizing.value || !gridRef.value) return;
+  lastMouseCoords.value = { x: e.clientX, y: e.clientY };
 
-  const deltaY = e.clientY - resizeStartParams.value.y;
+  const rect = gridRef.value.getBoundingClientRect();
+  const currentY = e.clientY - rect.top;
+  const deltaY = currentY - resizeStartParams.value.startY;
   const deltaMinutes = deltaY / pixelsPerMinute.value;
   const snappedDeltaMinutes = Math.round(deltaMinutes / SNAP_MINUTES) * SNAP_MINUTES;
   const deltaMs = snappedDeltaMinutes * 60000;
@@ -591,8 +629,6 @@ const handleResizeMouseMove = (e) => {
     const minEnd = resizeStartParams.value.startTime + minDurationMs;
     if (newEnd < minEnd) newEnd = minEnd;
 
-    // TODO: don't allow live tracks end time to be changed, if the user wants to
-    // modify the end time, first stop it and then updated it
     resizingTrackSnapshot.value.end_time = new Date(newEnd).toISOString();
   }
 };
@@ -600,6 +636,7 @@ const handleResizeMouseMove = (e) => {
 const handleResizeMouseUp = (e) => {
   window.removeEventListener('mousemove', handleResizeMouseMove);
   window.removeEventListener('mouseup', handleResizeMouseUp);
+  window.removeEventListener('scroll', handleGlobalScroll, true);
   if (!isResizing.value) return;
 
   if (resizeStartParams.value.isLive) {
@@ -613,6 +650,7 @@ const handleResizeMouseUp = (e) => {
   resizeStartParams.value = null;
   resizingEdge.value = null;
 };
+
 
 
 const calendarStyle = computed(() => ({
