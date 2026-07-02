@@ -18,6 +18,7 @@ export default defineConfig({
   },
 
   // Base URL must match Django's STATIC_URL
+  // when using vue frontend use '' else use 'static'
   // base: '/static/',
   base: '',
 
