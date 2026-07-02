@@ -13,7 +13,7 @@ RUN npm run build
 FROM python:3.13.12-slim
 WORKDIR /app
 
-COPY backend/requirements.txt ./
+COPY requirements.txt ./
 
 # Install Python dependencies, plus gunicorn
 RUN pip install --no-cache-dir -r requirements.txt gunicorn

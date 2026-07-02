@@ -19,6 +19,7 @@ This document tracks planned features, known bugs, and technical debt for the Ti
 - **Every time the frontend is refreshed it checks the cloud for data**: This is an expensive operation as downloading the `meta.json` takes some time.
 - **CalendarView project distribution bar in week mode**: The component should show the whole week, now it shows of a single day of the week (wednesday).
 - **Time tracks not present after importing and refresh**: Testing the delete all data, then importing from toggl track if we refresh after it reads from cloud (only meta) and then no time tracks but entries and projects are kept.
+- **Reports date range not working for week view**: The report time range uses 1 month + 1 week when using the week date range, the other date ranges work well. Custom ranges work as well, showing correctly the week range.
 
 ## 🎨 UI/UX Improvements
 
