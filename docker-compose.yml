@@ -1,6 +1,9 @@
 services:
   time-tracker:
-    build: .
+    build:
+      context: .
+      args:
+        - VUE_APP_API_ENDPOINT=http://127.0.0.1:8000/api
     container_name: time-tracker
     restart: unless-stopped
     ports:

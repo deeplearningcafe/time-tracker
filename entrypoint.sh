@@ -2,8 +2,7 @@
 set -e
 
 echo "Applying database migrations..."
-cd backend
-python manage.py migrate --noinput
+python backend/manage.py migrate --noinput
 
 echo "Starting server..."
 # Execute the CMD passed from the Dockerfile

@@ -55,7 +55,11 @@ export const setupInterceptors = (store) => {
       }
 
       // Check if the error is a 401 Unauthorized and it's not a retry.
-      if (error.response.status === 401 && !originalRequest._retry) {
+      if (
+        error.response &&
+        error.response.status === 401 &&
+        !originalRequest._retry
+      ) {
         originalRequest._retry = true;
 
         let retryCount = 0;
