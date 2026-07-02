@@ -7,6 +7,8 @@ RUN npm install
 
 # Copy source and build
 COPY frontend/ .
+ARG VITE_API_ENDPOINT
+
 RUN npm run build
 
 # Stage 2: Build the Django Backend
